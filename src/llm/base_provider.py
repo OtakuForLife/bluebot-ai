@@ -40,21 +40,21 @@ class LLMResponse:
 @dataclass
 class LLMConfig:
     """Configuration for an LLM provider.
-    
+
     Attributes:
         model: The model name/identifier to use.
         temperature: Sampling temperature (0.0 to 2.0, higher = more random).
         max_tokens: Maximum tokens to generate.
         top_p: Nucleus sampling parameter.
-        timeout: Request timeout in seconds.
+        timeout: Request timeout in seconds (default: 300 = 5 minutes).
         base_url: Base URL for the API (provider-specific).
         api_key: API key for authentication (if required).
     """
     model: str
     temperature: float = 0.7
-    max_tokens: int = 2048
+    max_tokens: int = 4096  # Increased for longer documents like vision docs
     top_p: float = 1.0
-    timeout: int = 60
+    timeout: int = 300  # 5 minutes - increased for long document generation
     base_url: Optional[str] = None
     api_key: Optional[str] = None
 

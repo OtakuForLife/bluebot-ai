@@ -213,17 +213,27 @@ class ProjectDetailView(QWidget):
 
         # Set up file tree
         project_path = project_data.get("path")
-        if not project_path:
-            # Try to construct path from location and name
-            location = project_data.get("location", "")
-            name = project_data.get("name", "")
-            if location and name:
-                project_path = str(Path(location) / name)
 
         if project_path and Path(project_path).exists():
             self.file_model.setRootPath(project_path)
             self.file_tree.setRootIndex(self.file_model.index(project_path))
             self.logger.info(f"Loaded project files from: {project_path}")
+
+            # Check if vision document already exists
+            vision_path = Path(project_path) / "design" / "VISION.md"
+            if vision_path.exists():
+                self.logger.info(f"Found existing vision document at: {vision_path}")
+                self.update_vision_status(
+                    "✓ Vision created - Ready for review",
+                    vision_created=True
+                )
+            else:
+                # Reset vision status for new/different project
+                self.vision_status_label.setText("No vision created yet")
+                self.vision_status_label.setStyleSheet("color: #666; font-style: italic;")
+                self.create_vision_button.setEnabled(True)
+                self.view_vision_button.setEnabled(False)
+                self.approve_vision_button.setEnabled(False)
         else:
             self.logger.warning(f"Project path not found: {project_path}")
 
@@ -465,7 +475,7 @@ class ProjectDetailView(QWidget):
         """Handle view vision button click."""
         if self.current_project:
             # Check if vision file exists
-            project_path = Path(self.current_project.get("location", ""))
+            project_path = Path(self.current_project.get("path", ""))
             vision_path = project_path / "design" / "VISION.md"
 
             if vision_path.exists():
@@ -519,7 +529,7 @@ class ProjectDetailView(QWidget):
                 self.logger.info(f"Vision approved for: {self.current_project.get('name')}")
 
                 # Read the vision content
-                project_path = Path(self.current_project.get("location", ""))
+                project_path = Path(self.current_project.get("path", ""))
                 vision_path = project_path / "design" / "VISION.md"
 
                 if vision_path.exists():

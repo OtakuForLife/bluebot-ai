@@ -153,7 +153,7 @@ class ProjectPanel(QWidget):
             project_data: Project data dictionary.
         """
         try:
-            project_path = Path(project_data["location"]) / project_data["name"]
+            project_path = Path(project_data["path"])
             project_path.mkdir(parents=True, exist_ok=True)
 
             # Create subdirectories
@@ -176,9 +176,6 @@ class ProjectPanel(QWidget):
 
             with open(project_path / "project.json", 'w', encoding='utf-8') as f:
                 json.dump(project_info, f, indent=2, ensure_ascii=False)
-
-            # Update project data with full path
-            project_data["path"] = str(project_path)
 
             self.logger.info(f"Created project structure at: {project_path}")
 

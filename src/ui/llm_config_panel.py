@@ -37,15 +37,15 @@ class LLMConfigPanel(QWidget):
     
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Initialize the LLM configuration panel.
-        
+
         Args:
             parent: Parent widget.
         """
         super().__init__(parent)
-        
+
         self.logger = logging.getLogger(f"{__name__}.LLMConfigPanel")
         self.current_provider: Optional[BaseLLMProvider] = None
-        
+
         self._setup_ui()
     
     def _setup_ui(self) -> None:
@@ -86,7 +86,7 @@ class LLMConfigPanel(QWidget):
         model_group = QGroupBox("Model Settings")
         model_layout = QFormLayout(model_group)
         
-        self.model_input = QLineEdit("codellama")
+        self.model_input = QLineEdit("qwen3-vl:8b")
         model_layout.addRow("Model:", self.model_input)
         
         self.temperature_spin = QDoubleSpinBox()
@@ -97,7 +97,7 @@ class LLMConfigPanel(QWidget):
         
         self.max_tokens_spin = QSpinBox()
         self.max_tokens_spin.setRange(1, 100000)
-        self.max_tokens_spin.setValue(2048)
+        self.max_tokens_spin.setValue(4096)  # Increased for longer documents
         model_layout.addRow("Max Tokens:", self.max_tokens_spin)
         
         self.top_p_spin = QDoubleSpinBox()
@@ -230,4 +230,35 @@ class LLMConfigPanel(QWidget):
             Current LLM provider or None if not configured.
         """
         return self.current_provider
+
+    def apply_default_config(self) -> None:
+        """Apply the default configuration automatically on startup.
+
+        This should be called by MainWindow after agents are created and signals are connected.
+        """
+        self.logger.info("Auto-applying default LLM configuration...")
+
+        try:
+            # Get the default configuration from UI
+            config = self._get_current_config()
+
+            # Create Ollama provider with default settings
+            provider_name = self.provider_combo.currentText()
+            if provider_name == "Ollama":
+                self.current_provider = OllamaProvider(config)
+
+                # Emit signals to distribute provider to agents
+                self.config_changed.emit(config)
+                self.provider_created.emit(self.current_provider)
+
+                self.status_label.setText("Default configuration applied automatically")
+                self.status_label.setStyleSheet("color: green;")
+                self.logger.info("Default configuration applied successfully")
+            else:
+                self.logger.warning(f"Provider {provider_name} not supported for auto-config")
+
+        except Exception as e:
+            self.status_label.setText(f"Auto-config failed: {str(e)}")
+            self.status_label.setStyleSheet("color: orange;")
+            self.logger.error(f"Failed to auto-apply configuration: {e}")
 

@@ -17,13 +17,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.agents.base import AgentStatus
 from src.orchestrator.agent_factory import AgentFactory
 from src.orchestrator.orchestrator import Orchestrator
 from src.ui.agent_panel import AgentPanel
 from src.ui.async_helper import AsyncHelper
 from src.ui.llm_config_panel import LLMConfigPanel
 from src.ui.output_panel import OutputPanel
-from src.ui.project_panel import ProjectPanel
 from src.ui.task_panel import TaskPanel
 
 
@@ -41,16 +41,18 @@ class MainWindow(QMainWindow):
     orchestrator_started = Signal()
     orchestrator_stopped = Signal()
     
-    def __init__(self, orchestrator: Optional[Orchestrator] = None) -> None:
+    def __init__(self, orchestrator: Optional[Orchestrator] = None, project_data: Optional[dict] = None) -> None:
         """Initialize the main window.
-        
+
         Args:
             orchestrator: Optional orchestrator instance. If None, creates a new one.
+            project_data: Project data dictionary for the project to work on.
         """
         super().__init__()
-        
+
         self.logger = logging.getLogger(f"{__name__}.MainWindow")
         self.orchestrator = orchestrator or Orchestrator()
+        self.project_data = project_data
         self.project_path: Optional[Path] = None
 
         # Create async helper for running orchestrator methods
@@ -59,16 +61,22 @@ class MainWindow(QMainWindow):
 
         # Create agent factory
         self.agent_factory = AgentFactory(self.orchestrator)
-        self.agents: dict[str, any] = {}
+        self.agents: dict[str, any] = {} # type: ignore
 
         self._setup_ui()
         self._create_menus()
-        self._create_toolbars()
         self._create_status_bar()
         self._connect_signals()
 
         # Initialize orchestrator and agents
         self._initialize_orchestrator()
+
+        # Auto-apply default LLM configuration AFTER agents are created
+        self.llm_config_panel.apply_default_config()
+
+        # Set the project if provided
+        if self.project_data:
+            self._set_current_project(self.project_data)
 
         self.logger.info("Main window initialized")
     
@@ -76,27 +84,28 @@ class MainWindow(QMainWindow):
         """Set up the main UI layout."""
         self.setWindowTitle("Bluebot AI - Multi-Agent Game Development")
         self.setMinimumSize(1200, 800)
-        
+
         # Create central widget with tab layout
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        
+
         layout = QVBoxLayout(self.central_widget)
         layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Create tab widget for different views
         self.tab_widget = QTabWidget()
         layout.addWidget(self.tab_widget)
 
-        # Create actual panel widgets
-        self.project_panel = ProjectPanel()
+        # Create actual panel widgets (no ProjectPanel - we have a single project)
+        from src.ui.project_detail_view import ProjectDetailView
+        self.project_detail_view = ProjectDetailView()
         self.agent_panel = AgentPanel(self.orchestrator)
         self.task_panel = TaskPanel(self.orchestrator)
         self.output_panel = OutputPanel()
         self.llm_config_panel = LLMConfigPanel()
 
-        # Add tabs with actual panels (Projects first)
-        self.tab_widget.addTab(self.project_panel, "Projects")
+        # Add tabs (Project first, then Agents, Tasks, Output, LLM Settings)
+        self.tab_widget.addTab(self.project_detail_view, "Project")
         self.tab_widget.addTab(self.agent_panel, "Agents")
         self.tab_widget.addTab(self.task_panel, "Tasks")
         self.tab_widget.addTab(self.output_panel, "Output")
@@ -105,22 +114,10 @@ class MainWindow(QMainWindow):
     def _create_menus(self) -> None:
         """Create the menu bar."""
         menubar = self.menuBar()
-        
+
         # File menu
         file_menu = menubar.addMenu("&File")
-        
-        new_project_action = QAction("&New Project...", self)
-        new_project_action.setShortcut("Ctrl+N")
-        new_project_action.triggered.connect(self._on_new_project)
-        file_menu.addAction(new_project_action)
-        
-        open_project_action = QAction("&Open Project...", self)
-        open_project_action.setShortcut("Ctrl+O")
-        open_project_action.triggered.connect(self._on_open_project)
-        file_menu.addAction(open_project_action)
-        
-        file_menu.addSeparator()
-        
+
         exit_action = QAction("E&xit", self)
         exit_action.setShortcut("Ctrl+Q")
         exit_action.triggered.connect(self.close)
@@ -144,21 +141,6 @@ class MainWindow(QMainWindow):
         about_action.triggered.connect(self._on_about)
         help_menu.addAction(about_action)
     
-    def _create_toolbars(self) -> None:
-        """Create toolbars."""
-        toolbar = QToolBar("Main Toolbar")
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-        
-        # Add toolbar actions
-        start_action = QAction("Start Orchestrator", self)
-        start_action.triggered.connect(self._on_start_orchestrator)
-        toolbar.addAction(start_action)
-        
-        stop_action = QAction("Stop Orchestrator", self)
-        stop_action.triggered.connect(self._on_stop_orchestrator)
-        toolbar.addAction(stop_action)
-    
     def _create_status_bar(self) -> None:
         """Create the status bar."""
         self.status_bar = QStatusBar()
@@ -173,12 +155,9 @@ class MainWindow(QMainWindow):
         # Connect LLM config panel
         self.llm_config_panel.provider_created.connect(self._on_provider_created)
 
-        # Connect project panel
-        self.project_panel.project_selected.connect(self._on_project_selected)
-
-        # Connect project detail view (inside project panel)
-        self.project_panel.detail_view.vision_creation_requested.connect(self._on_vision_creation_requested)
-        self.project_panel.detail_view.vision_approval_requested.connect(self._on_vision_approval_requested)
+        # Connect project detail view
+        self.project_detail_view.vision_creation_requested.connect(self._on_vision_creation_requested)
+        self.project_detail_view.vision_approval_requested.connect(self._on_vision_approval_requested)
 
         # Connect agent panel
         self.agent_panel.agent_start_requested.connect(self._on_agent_start_requested)
@@ -268,24 +247,8 @@ class MainWindow(QMainWindow):
         """Handle output panel clear request."""
         self.logger.info("Output cleared by user")
     
-    @Slot()
-    def _on_new_project(self) -> None:
-        """Handle new project action."""
-        self.logger.info("New project requested")
-        # Switch to projects tab and trigger new project dialog
-        self.tab_widget.setCurrentWidget(self.project_panel)
-        self.project_panel._on_new_project()
-
-    @Slot()
-    def _on_open_project(self) -> None:
-        """Handle open project action."""
-        self.logger.info("Open project requested")
-        # Switch to projects tab
-        self.tab_widget.setCurrentWidget(self.project_panel)
-
-    @Slot(dict)
-    def _on_project_selected(self, project_data: dict) -> None:
-        """Handle project selection.
+    def _set_current_project(self, project_data: dict) -> None:
+        """Set the current project and update UI.
 
         Args:
             project_data: Selected project data.
@@ -293,13 +256,19 @@ class MainWindow(QMainWindow):
         project_name = project_data.get("name", "Unknown")
         project_path_str = project_data.get("path")
 
-        self.logger.info(f"Project selected: {project_name}")
+        self.logger.info(f"Project set: {project_name}")
+
+        # Update window title with project name
+        self.setWindowTitle(f"Bluebot AI - {project_name}")
+
+        # Set project in detail view
+        self.project_detail_view.set_project(project_data)
 
         if project_path_str:
             self.set_project_path(Path(project_path_str))
 
         self.output_panel.add_log(
-            f"Project selected: {project_name}",
+            f"Project loaded: {project_name}",
             level="INFO",
             agent="System"
         )
@@ -315,6 +284,58 @@ class MainWindow(QMainWindow):
         self.logger.info(f"Vision creation requested for: {project_name}")
 
         # Get the Game Designer agent
+        designer_agent = self.agent_factory.get_agent_by_name("Game Designer")
+
+        if not designer_agent:
+            self.logger.error("Game Designer agent not found")
+            self.output_panel.add_log(
+                "Error: Game Designer agent not found",
+                level="ERROR",
+                agent="System"
+            )
+            return
+
+        # Check if LLM provider is configured
+        self.logger.info(f"Designer agent LLM provider: {designer_agent.llm_provider}")
+        if not designer_agent.llm_provider:
+            self.logger.error("No LLM provider configured")
+            self.output_panel.add_log(
+                "Error: No LLM provider configured. Please configure an LLM provider in the LLM Settings tab and click 'Apply Configuration'.",
+                level="ERROR",
+                agent="System"
+            )
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "LLM Provider Required",
+                "Vision creation requires an LLM provider.\n\n"
+                "Please go to the 'LLM Settings' tab, configure your LLM provider, "
+                "and click the 'Apply Configuration' button."
+            )
+            return
+
+        # Set project path for the agent
+        from pathlib import Path
+        project_path = Path(project_data.get("path", ""))
+        designer_agent.set_project_path(project_path)
+
+        # Make sure the agent is started
+        if designer_agent.status != AgentStatus.RUNNING:
+            self.logger.info("Starting Game Designer agent...")
+            self.async_helper.run_async(self.orchestrator.start_agent(designer_agent.id))
+            # Give it a moment to start
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(500, lambda: self._send_vision_creation_task(project_data))
+        else:
+            self._send_vision_creation_task(project_data)
+
+    def _send_vision_creation_task(self, project_data: dict) -> None:
+        """Send the vision creation task to the Game Designer agent.
+
+        Args:
+            project_data: Project data dictionary.
+        """
+        project_name = project_data.get("name", "Unknown")
         designer_agent = self.agent_factory.get_agent_by_name("Game Designer")
 
         if designer_agent:
@@ -337,17 +358,15 @@ class MainWindow(QMainWindow):
                 level="INFO",
                 agent="Game Designer"
             )
+            self.output_panel.add_log(
+                f"Note: First request may take longer as the model '{designer_agent.llm_provider.config.model}' loads into memory...",
+                level="INFO",
+                agent="Game Designer"
+            )
 
             # Schedule a check for vision completion
             from PySide6.QtCore import QTimer
             QTimer.singleShot(5000, lambda: self._check_vision_created(project_data))
-        else:
-            self.logger.error("Game Designer agent not found")
-            self.output_panel.add_log(
-                "Error: Game Designer agent not found",
-                level="ERROR",
-                agent="System"
-            )
 
     def _check_vision_created(self, project_data: dict) -> None:
         """Check if vision document has been created.
@@ -357,12 +376,12 @@ class MainWindow(QMainWindow):
         """
         from pathlib import Path
 
-        project_path = Path(project_data.get("location", ""))
+        project_path = Path(project_data.get("path", ""))
         vision_path = project_path / "design" / "VISION.md"
 
         if vision_path.exists():
             self.logger.info("Vision document created successfully")
-            self.project_panel.detail_view.update_vision_status(
+            self.project_detail_view.update_vision_status(
                 "✓ Vision created - Ready for review",
                 vision_created=True
             )
@@ -497,19 +516,7 @@ class MainWindow(QMainWindow):
 
         self.orchestrator_stopped.emit()
 
-    @Slot()
-    def _on_start_orchestrator(self) -> None:
-        """Handle start orchestrator action."""
-        self.logger.info("Starting orchestrator...")
-        self.status_bar.showMessage("Orchestrator started")
-        self.orchestrator_started.emit()
 
-    @Slot()
-    def _on_stop_orchestrator(self) -> None:
-        """Handle stop orchestrator action."""
-        self.logger.info("Stopping orchestrator...")
-        self.status_bar.showMessage("Orchestrator stopped")
-        self.orchestrator_stopped.emit()
 
     @Slot()
     def _on_about(self) -> None:

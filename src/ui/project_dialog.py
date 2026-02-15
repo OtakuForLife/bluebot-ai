@@ -69,17 +69,17 @@ class NewProjectDialog(QDialog):
         self.description_input.setMaximumHeight(100)
         basic_layout.addRow("Description:", self.description_input)
         
-        # Project location
+        # Project location (parent directory)
         location_layout = QHBoxLayout()
         self.location_input = QLineEdit()
-        self.location_input.setPlaceholderText("Select project location...")
+        self.location_input.setPlaceholderText("Select parent directory (e.g., C:/Users/User/Desktop)")
         location_layout.addWidget(self.location_input)
-        
+
         browse_button = QPushButton("Browse...")
         browse_button.clicked.connect(self._on_browse_location)
         location_layout.addWidget(browse_button)
-        
-        basic_layout.addRow("Location*:", location_layout)
+
+        basic_layout.addRow("Parent Directory*:", location_layout)
         
         layout.addWidget(basic_group)
         
@@ -146,7 +146,7 @@ class NewProjectDialog(QDialog):
         """Handle browse location button click."""
         directory = QFileDialog.getExistingDirectory(
             self,
-            "Select Project Location",
+            "Select Parent Directory for Project",
             str(Path.home()),
             QFileDialog.Option.ShowDirsOnly
         )
@@ -168,7 +168,7 @@ class NewProjectDialog(QDialog):
 
         if not location:
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Validation Error", "Project location is required.")
+            QMessageBox.warning(self, "Validation Error", "Parent directory is required.")
             return
 
         # Collect selected genres
@@ -203,10 +203,16 @@ class NewProjectDialog(QDialog):
             Project data dictionary or None if cancelled.
         """
         if self.exec() == QDialog.DialogCode.Accepted:
+            name = self.name_input.text().strip()
+            location = self.location_input.text().strip()
+
+            # Calculate full project path
+            project_path = str(Path(location) / name)
+
             return {
-                "name": self.name_input.text().strip(),
+                "name": name,
                 "description": self.description_input.toPlainText().strip(),
-                "location": self.location_input.text().strip(),
+                "path": project_path,
                 "genres": [
                     genre for genre, checkbox in self.genre_checkboxes.items()
                     if checkbox.isChecked()

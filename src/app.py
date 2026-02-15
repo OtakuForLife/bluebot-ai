@@ -41,8 +41,10 @@ def main() -> None:
         return
 
     try:
+        from PySide6.QtWidgets import QDialog
         from src.orchestrator.orchestrator import Orchestrator
         from src.ui.main_window import MainWindow
+        from src.ui.project_selection_window import ProjectSelectionWindow
 
         logger.info("Starting Bluebot AI application...")
 
@@ -51,11 +53,25 @@ def main() -> None:
         app.setApplicationName("Bluebot AI")
         app.setOrganizationName("Bluebot")
 
+        # Show project selection window first
+        project_selection = ProjectSelectionWindow()
+        if project_selection.exec() != QDialog.DialogCode.Accepted:
+            logger.info("No project selected, exiting application")
+            return
+
+        # Get selected project
+        selected_project = project_selection.get_selected_project()
+        if not selected_project:
+            logger.info("No project selected, exiting application")
+            return
+
+        logger.info(f"Project selected: {selected_project.get('name')}")
+
         # Create orchestrator
         orchestrator = Orchestrator()
 
-        # Create and show main window
-        window = MainWindow(orchestrator)
+        # Create and show main window with selected project
+        window = MainWindow(orchestrator, selected_project)
         window.show()
 
         logger.info("Application started successfully")

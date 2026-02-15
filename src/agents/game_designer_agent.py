@@ -138,9 +138,16 @@ class GameDesignerAgent(Agent):
 
         self.logger.info(f"Creating vision document for: {project_name}")
 
+        # Search knowledge base for vision document best practices
+        vision_docs = self.knowledge_base.search("vision document")
+        self.logger.debug(f"Found {len(vision_docs)} relevant vision documentation")
+
         # If LLM provider is available, use it to generate the vision
         if self.llm_provider:
             try:
+                # Format knowledge context from documentation
+                knowledge_context = GameDesignerPrompts.format_knowledge_context(vision_docs)
+
                 # Create a comprehensive prompt for vision generation
                 user_prompt = f"""# Task: Create Game Vision Document
 
@@ -151,6 +158,8 @@ You are creating a comprehensive vision document for a new game project.
 - **Description**: {project_description}
 - **Genres**: {', '.join(genres) if genres else 'Not specified'}
 - **Game Elements**: {', '.join(elements) if elements else 'Not specified'}
+
+{knowledge_context}
 
 ## Your Task
 Create a detailed game vision document that includes:
@@ -189,6 +198,7 @@ Create a detailed game vision document that includes:
    - Key features that must be included
    - Quality benchmarks
 
+Use the best practices from the knowledge base above to create a professional, well-structured vision document.
 Format the document in clear, well-structured Markdown. Be specific and actionable.
 The vision should inspire the development team while being realistic and achievable."""
 

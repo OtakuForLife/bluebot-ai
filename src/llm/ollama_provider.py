@@ -180,14 +180,53 @@ class OllamaProvider(BaseLLMProvider):
                 original_error=e,
             )
 
+    async def preload_model(self) -> bool:
+        """Pre-load the model into memory to avoid delays on first request.
+
+        This sends a minimal request to Ollama to trigger model loading.
+        Subsequent requests will be much faster since the model is already loaded.
+
+        Returns:
+            True if model was loaded successfully, False otherwise.
+        """
+        url = f"{self.base_url}/api/generate"
+
+        payload = {
+            "model": self.config.model,
+            "prompt": "Hello",  # Minimal prompt to trigger model loading
+            "stream": False,
+            "options": {
+                "num_predict": 1,  # Only generate 1 token
+            },
+        }
+
+        try:
+            self.logger.info(f"Pre-loading model '{self.config.model}'...")
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=self.config.timeout),
+                ) as response:
+                    if response.status == 200:
+                        self.logger.info(f"Model '{self.config.model}' loaded successfully")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        self.logger.warning(f"Failed to pre-load model: HTTP {response.status}: {error_text}")
+                        return False
+        except Exception as e:
+            self.logger.warning(f"Failed to pre-load model: {e}")
+            return False
+
     async def is_available(self) -> bool:
         """Check if Ollama is running and available.
-        
+
         Returns:
             True if Ollama is available, False otherwise.
         """
         url = f"{self.base_url}/api/tags"
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as response:
