@@ -1,13 +1,23 @@
 """Application entrypoint for the Bluebot AI desktop application.
 
-This module will gradually wire together the GUI, agent system, and Godot
-integration. For now it provides a minimal Qt-based window so the project can
-be launched end-to-end.
+This module wires together the GUI, agent system, and Godot integration.
 """
 
 from __future__ import annotations
 
+import logging
 import sys
+
+
+def setup_logging() -> None:
+    """Set up application logging."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+        ]
+    )
 
 
 def main() -> None:
@@ -18,18 +28,42 @@ def main() -> None:
     fully set up.
     """
 
+    # Set up logging
+    setup_logging()
+    logger = logging.getLogger(__name__)
+
     try:
-        from PySide6.QtWidgets import QApplication, QLabel
+        from PySide6.QtWidgets import QApplication
     except ImportError:
         print(
             "PySide6 is not installed. Install the 'PySide6' package to run the GUI.",
         )
         return
 
-    app = QApplication(sys.argv)
-    window = QLabel("Bluebot AI 5aa multi-agent Godot tool (GUI coming soon)")
-    window.setWindowTitle("Bluebot AI")
-    window.resize(640, 360)
-    window.show()
-    sys.exit(app.exec())
+    try:
+        from src.orchestrator.orchestrator import Orchestrator
+        from src.ui.main_window import MainWindow
 
+        logger.info("Starting Bluebot AI application...")
+
+        # Create Qt application
+        app = QApplication(sys.argv)
+        app.setApplicationName("Bluebot AI")
+        app.setOrganizationName("Bluebot")
+
+        # Create orchestrator
+        orchestrator = Orchestrator()
+
+        # Create and show main window
+        window = MainWindow(orchestrator)
+        window.show()
+
+        logger.info("Application started successfully")
+
+        # Run event loop
+        sys.exit(app.exec())
+
+    except Exception as e:
+        logger.error(f"Failed to start application: {e}", exc_info=True)
+        print(f"Error: {e}")
+        sys.exit(1)
