@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from src.ui.project_detail_view import ProjectDetailView
 from src.ui.project_dialog import NewProjectDialog
+from src.utils.project_structure import create_project_structure
 
 
 class ProjectPanel(QWidget):
@@ -152,35 +153,13 @@ class ProjectPanel(QWidget):
         Args:
             project_data: Project data dictionary.
         """
-        try:
-            project_path = Path(project_data["path"])
-            project_path.mkdir(parents=True, exist_ok=True)
+        # Use centralized utility for project structure creation
+        success = create_project_structure(project_data)
 
-            # Create subdirectories
-            (project_path / "scripts").mkdir(exist_ok=True)
-            (project_path / "scenes").mkdir(exist_ok=True)
-            (project_path / "assets").mkdir(exist_ok=True)
-            (project_path / "assets" / "sprites").mkdir(exist_ok=True)
-            (project_path / "assets" / "models").mkdir(exist_ok=True)
-            (project_path / "assets" / "audio").mkdir(exist_ok=True)
-            (project_path / "design").mkdir(exist_ok=True)
-            (project_path / "docs").mkdir(exist_ok=True)
-
-            # Create project info file
-            project_info = {
-                "name": project_data["name"],
-                "description": project_data["description"],
-                "genres": project_data["genres"],
-                "elements": project_data["elements"],
-            }
-
-            with open(project_path / "project.json", 'w', encoding='utf-8') as f:
-                json.dump(project_info, f, indent=2, ensure_ascii=False)
-
-            self.logger.info(f"Created project structure at: {project_path}")
-
-        except Exception as e:
-            self.logger.error(f"Failed to create project structure: {e}")
+        if success:
+            self.logger.info(f"Created project structure for: {project_data['name']}")
+        else:
+            self.logger.error(f"Failed to create project structure for: {project_data['name']}")
 
     @Slot(QListWidgetItem, QListWidgetItem)
     def _on_project_selected(self, current: QListWidgetItem, previous: QListWidgetItem) -> None:
