@@ -15,6 +15,7 @@ from src.agents.base import Agent, Message, MessageType
 from src.agents.knowledge_base import KnowledgeBase
 from src.llm import BaseLLMProvider, LLMMessage
 from src.llm.prompt_templates import GameDesignerPrompts
+from src.utils.project_structure import DESIGN_DIR, VISION_DOCUMENT_FILE, write_project_file
 
 
 class GameDesignerAgent(Agent):
@@ -148,59 +149,14 @@ class GameDesignerAgent(Agent):
                 # Format knowledge context from documentation
                 knowledge_context = GameDesignerPrompts.format_knowledge_context(vision_docs)
 
-                # Create a comprehensive prompt for vision generation
-                user_prompt = f"""# Task: Create Game Vision Document
-
-You are creating a comprehensive vision document for a new game project.
-
-## Project Information
-- **Name**: {project_name}
-- **Description**: {project_description}
-- **Genres**: {', '.join(genres) if genres else 'Not specified'}
-- **Game Elements**: {', '.join(elements) if elements else 'Not specified'}
-
-{knowledge_context}
-
-## Your Task
-Create a detailed game vision document that includes:
-
-1. **Executive Summary** (2-3 paragraphs)
-   - Core concept and hook
-   - What makes this game unique
-   - Target audience
-
-2. **Game Overview**
-   - Genre and style
-   - Platform and technical scope
-   - Core gameplay loop (in 3-5 sentences)
-
-3. **Vision Statement**
-   - What experience should players have?
-   - What emotions should the game evoke?
-   - What should players remember after playing?
-
-4. **Unique Selling Points (USPs)**
-   - List 3-5 features that make this game stand out
-   - Why would players choose this over similar games?
-
-5. **Target Audience**
-   - Primary demographic
-   - Player motivations and preferences
-   - Accessibility considerations
-
-6. **Scope and Constraints**
-   - Estimated development timeline (rough phases)
-   - Technical requirements
-   - Resource considerations
-
-7. **Success Criteria**
-   - What does "done" look like?
-   - Key features that must be included
-   - Quality benchmarks
-
-Use the best practices from the knowledge base above to create a professional, well-structured vision document.
-Format the document in clear, well-structured Markdown. Be specific and actionable.
-The vision should inspire the development team while being realistic and achievable."""
+                # Create the vision prompt using the template
+                user_prompt = GameDesignerPrompts.create_vision_prompt(
+                    project_name=project_name,
+                    project_description=project_description,
+                    genres=genres,
+                    elements=elements,
+                    knowledge_context=knowledge_context
+                )
 
                 # Generate the vision document using LLM
                 messages = [
@@ -215,10 +171,15 @@ The vision should inspire the development team while being realistic and achieva
                 # Save the vision document if project path is set
                 vision_content = response.content
                 if self.project_path:
-                    doc_path = self.project_path / "design" / "VISION.md"
-                    doc_path.parent.mkdir(parents=True, exist_ok=True)
-                    doc_path.write_text(vision_content, encoding="utf-8")
-                    self.logger.info(f"Saved vision document to: {doc_path}")
+                    success = write_project_file(
+                        self.project_path,
+                        f"{DESIGN_DIR}/{VISION_DOCUMENT_FILE}",
+                        vision_content
+                    )
+                    if success:
+                        self.logger.info(f"Saved vision document to: {self.project_path / DESIGN_DIR / VISION_DOCUMENT_FILE}")
+                    else:
+                        self.logger.error("Failed to save vision document")
 
                 # Store the vision document
                 self.design_documents["vision"] = {
@@ -276,10 +237,15 @@ The vision should inspire the development team while being realistic and achieva
 
                 # Save the design document if project path is set
                 if self.project_path:
-                    doc_path = self.project_path / "design" / f"mechanics_{mechanic_type}.md"
-                    doc_path.parent.mkdir(parents=True, exist_ok=True)
-                    doc_path.write_text(response.content, encoding="utf-8")
-                    self.logger.info(f"Saved mechanics definition to: {doc_path}")
+                    success = write_project_file(
+                        self.project_path,
+                        f"{DESIGN_DIR}/mechanics_{mechanic_type}.md",
+                        response.content
+                    )
+                    if success:
+                        self.logger.info(f"Saved mechanics definition to: {self.project_path / DESIGN_DIR / f'mechanics_{mechanic_type}.md'}")
+                    else:
+                        self.logger.error("Failed to save mechanics definition")
 
                 # Store the mechanics definition
                 self.design_documents[f"mechanics_{mechanic_type}"] = {
@@ -403,10 +369,15 @@ Format as a well-structured markdown document."""
 
                 # Save the design document if project path is set
                 if self.project_path:
-                    doc_path = self.project_path / "design" / f"{doc_name}.md"
-                    doc_path.parent.mkdir(parents=True, exist_ok=True)
-                    doc_path.write_text(response.content, encoding="utf-8")
-                    self.logger.info(f"Saved design document to: {doc_path}")
+                    success = write_project_file(
+                        self.project_path,
+                        f"{DESIGN_DIR}/{doc_name}.md",
+                        response.content
+                    )
+                    if success:
+                        self.logger.info(f"Saved design document to: {self.project_path / DESIGN_DIR / f'{doc_name}.md'}")
+                    else:
+                        self.logger.error("Failed to save design document")
 
                 # Store the design document
                 self.design_documents[doc_name] = {

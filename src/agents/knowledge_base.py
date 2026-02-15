@@ -172,7 +172,7 @@ class KnowledgeBase:
         """
         return self._loaded
 
-    def get_summary(self) -> dict[str, any]:
+    def get_summary(self) -> dict[str, any]: # type: ignore
         """Get a summary of the knowledge base.
 
         Returns:
@@ -184,4 +184,3 @@ class KnowledgeBase:
             "loaded": self.is_loaded(),
             "base_path": str(self.base_path) if self.base_path else None,
         }
-

@@ -13,17 +13,17 @@ class PromptTemplate:
     @staticmethod
     def format_knowledge_context(knowledge_docs: list[tuple[str, str]], max_docs: int = 5) -> str:
         """Format knowledge base documents into context.
-        
+
         Args:
             knowledge_docs: List of (key, content) tuples from knowledge base search.
             max_docs: Maximum number of documents to include.
-            
+
         Returns:
             Formatted knowledge context string.
         """
         if not knowledge_docs:
             return "No relevant documentation found."
-        
+
         context_parts = ["# Relevant Documentation\n"]
         for i, (key, content) in enumerate(knowledge_docs[:max_docs]):
             context_parts.append(f"\n## Document: {key}\n")
@@ -31,7 +31,7 @@ class PromptTemplate:
             if len(content) > 2000:
                 content = content[:2000] + "\n...(truncated)"
             context_parts.append(content)
-        
+
         return "\n".join(context_parts)
 
 
@@ -53,12 +53,12 @@ Always provide complete, working code with comments explaining key sections."""
     @staticmethod
     def create_script_prompt(script_name: str, description: str, knowledge_context: str) -> str:
         """Create a prompt for generating a GDScript file.
-        
+
         Args:
             script_name: Name of the script to create.
             description: Description of what the script should do.
             knowledge_context: Relevant Godot documentation.
-            
+
         Returns:
             Formatted prompt string.
         """
@@ -83,11 +83,11 @@ Provide the complete script code."""
     @staticmethod
     def implement_gameplay_prompt(feature: str, knowledge_context: str) -> str:
         """Create a prompt for implementing a gameplay feature.
-        
+
         Args:
             feature: Description of the gameplay feature.
             knowledge_context: Relevant Godot documentation.
-            
+
         Returns:
             Formatted prompt string.
         """
@@ -124,14 +124,90 @@ Key responsibilities:
 Always provide detailed, actionable design documents."""
 
     @staticmethod
+    def create_vision_prompt(
+        project_name: str,
+        project_description: str,
+        genres: list[str],
+        elements: list[str],
+        knowledge_context: str
+    ) -> str:
+        """Create a prompt for generating a game vision document.
+
+        Args:
+            project_name: Name of the game project.
+            project_description: Description of the game.
+            genres: List of game genres.
+            elements: List of game elements.
+            knowledge_context: Relevant game design documentation.
+
+        Returns:
+            Formatted prompt string.
+        """
+        genres_str = ', '.join(genres) if genres else 'Not specified'
+        elements_str = ', '.join(elements) if elements else 'Not specified'
+
+        return f"""# Task: Create Game Vision Document
+
+You are creating a comprehensive vision document for a new game project.
+
+## Project Information
+- **Name**: {project_name}
+- **Description**: {project_description}
+- **Genres**: {genres_str}
+- **Game Elements**: {elements_str}
+
+{knowledge_context}
+
+## Your Task
+Create a detailed game vision document that includes:
+
+1. **Executive Summary** (2-3 paragraphs)
+   - Core concept and hook
+   - What makes this game unique
+   - Target audience
+
+2. **Game Overview**
+   - Genre and style
+   - Platform and technical scope
+   - Core gameplay loop (in 3-5 sentences)
+
+3. **Vision Statement**
+   - What experience should players have?
+   - What emotions should the game evoke?
+   - What should players remember after playing?
+
+4. **Unique Selling Points (USPs)**
+   - List 3-5 features that make this game stand out
+   - Why would players choose this over similar games?
+
+5. **Target Audience**
+   - Primary demographic
+   - Player motivations and preferences
+   - Accessibility considerations
+
+6. **Scope and Constraints**
+   - Estimated development timeline (rough phases)
+   - Technical requirements
+   - Resource considerations
+
+7. **Success Criteria**
+   - What does "done" look like?
+   - Key features that must be included
+   - Quality benchmarks
+
+Use the best practices from the knowledge base above to create a professional, well-structured vision document.
+Format the document in clear, well-structured Markdown. Be specific and actionable.
+The vision should inspire the development team while being realistic and achievable."""
+
+    @staticmethod
     def define_mechanics_prompt(mechanic_type: str, description: str, knowledge_context: str) -> str:
         """Create a prompt for defining game mechanics.
-        
+
         Args:
             mechanic_type: Type of mechanic (combat, movement, etc.).
             description: Description of the desired mechanic.
             knowledge_context: Relevant game design documentation.
-            
+
         Returns:
             Formatted prompt string.
         """
@@ -173,12 +249,12 @@ Always provide detailed asset specifications and design guidelines."""
     @staticmethod
     def create_asset_prompt(asset_type: str, description: str, knowledge_context: str) -> str:
         """Create a prompt for designing a game asset.
-        
+
         Args:
             asset_type: Type of asset (sprite, model, UI, etc.).
             description: Description of the desired asset.
             knowledge_context: Relevant art documentation.
-            
+
         Returns:
             Formatted prompt string.
         """
@@ -220,11 +296,11 @@ Always provide detailed, actionable bug reports and test plans."""
     @staticmethod
     def create_test_plan_prompt(feature: str, knowledge_context: str) -> str:
         """Create a prompt for generating a test plan.
-        
+
         Args:
             feature: Feature to test.
             knowledge_context: Relevant QA documentation.
-            
+
         Returns:
             Formatted prompt string.
         """
@@ -244,4 +320,3 @@ Provide:
 5. Acceptance criteria
 
 Format as a structured test plan document."""
-
