@@ -15,6 +15,7 @@ from uuid import UUID
 
 from src.agents.base import Agent, AgentStatus, Message, MessageType
 from src.orchestrator.message_bus import MessageBus
+from src.orchestrator.task_manager import TaskManager
 
 
 class Orchestrator:
@@ -34,6 +35,7 @@ class Orchestrator:
         """Initialize a new orchestrator."""
         self.logger = logging.getLogger("orchestrator")
         self.message_bus = MessageBus()
+        self.task_manager = TaskManager(message_bus=self.message_bus)
         self._agents: dict[UUID, Agent] = {}
         self._agent_tasks: dict[UUID, asyncio.Task] = {}
         self._running: bool = False
@@ -92,6 +94,9 @@ class Orchestrator:
             return
 
         self._agents[agent.id] = agent
+
+        # Set the task manager on the agent
+        agent.task_manager = self.task_manager
 
         # Subscribe the agent to the message bus
         self.message_bus.subscribe(agent.id, agent.receive_message)

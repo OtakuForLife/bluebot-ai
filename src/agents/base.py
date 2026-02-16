@@ -9,8 +9,11 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from src.orchestrator.task_manager import TaskManager
 
 
 class AgentStatus(Enum):
@@ -38,6 +41,13 @@ class MessageType(Enum):
     VISION_CREATED = "vision_created"
     VISION_APPROVED = "vision_approved"
     VISION_REJECTED = "vision_rejected"
+    # Autonomous task management message types
+    TASK_CREATED = "task_created"
+    TASK_CLAIMED = "task_claimed"
+    TASK_COMPLETED = "task_completed"
+    TASK_STATE_CHANGED = "task_state_changed"
+    TASK_QUERY = "task_query"
+    TASK_QUERY_RESPONSE = "task_query_response"
 
 
 @dataclass
@@ -95,6 +105,8 @@ class Agent(ABC):
         )
         self._running: bool = False
         self._task_queue: asyncio.Queue[Message] = asyncio.Queue()
+        self.task_manager: Optional[TaskManager] = None  # Will be set by orchestrator
+        self.autonomous_mode: bool = False  # Enable/disable autonomous behavior
 
     async def start(self) -> None:
         """Start the agent's main processing loop.
@@ -165,16 +177,142 @@ class Agent(ABC):
         """Internal main loop for the agent.
 
         Continuously processes messages from the task queue while running.
+        Also calls autonomous tick when in autonomous mode.
         """
+        autonomous_tick_interval = 5.0  # seconds between autonomous ticks
+        last_autonomous_tick = 0.0
+
         while self._running:
             try:
                 # Wait for a message with a timeout to allow checking _running flag
                 message = await asyncio.wait_for(self._task_queue.get(), timeout=0.5)
                 await self.process_message(message)
             except asyncio.TimeoutError:
-                # No message received, continue loop
+                # No message received, check if we should do autonomous tick
+                if self.autonomous_mode:
+                    import time
+                    current_time = time.time()
+                    if current_time - last_autonomous_tick >= autonomous_tick_interval:
+                        try:
+                            await self.on_autonomous_tick()
+                            last_autonomous_tick = current_time
+                        except Exception as e:
+                            self.logger.error(f"Error in autonomous tick: {e}", exc_info=True)
                 continue
             except Exception as e:
                 self.logger.error(f"Error processing message: {e}", exc_info=True)
                 self.status = AgentStatus.ERROR
+
+    # Task management methods for autonomous behavior
+
+    async def discover_tasks(self, task_type: Optional[str] = None) -> list[dict]:
+        """Discover available tasks that this agent can handle.
+
+        Args:
+            task_type: Optional filter by specific task type.
+
+        Returns:
+            List of available task data dictionaries.
+        """
+        if not self.task_manager:
+            self.logger.warning("Task manager not available")
+            return []
+
+        return await self.task_manager.get_available_tasks(
+            agent_role=self.name,
+            task_type=task_type
+        )
+
+    async def claim_task(self, task_id: str) -> bool:
+        """Claim a task for this agent to work on.
+
+        Args:
+            task_id: ID of the task to claim.
+
+        Returns:
+            True if task was successfully claimed, False otherwise.
+        """
+        if not self.task_manager:
+            self.logger.warning("Task manager not available")
+            return False
+
+        success = await self.task_manager.claim_task(task_id, self.id)
+
+        if success:
+            self.logger.info(f"Successfully claimed task: {task_id}")
+
+        return success
+
+    async def complete_task(self, task_id: str, result: Optional[dict] = None) -> bool:
+        """Mark a task as completed.
+
+        Args:
+            task_id: ID of the task to complete.
+            result: Optional result data from task completion.
+
+        Returns:
+            True if task was successfully completed, False otherwise.
+        """
+        if not self.task_manager:
+            self.logger.warning("Task manager not available")
+            return False
+
+        success = await self.task_manager.complete_task(task_id, self.id, result)
+
+        if success:
+            self.logger.info(f"Successfully completed task: {task_id}")
+
+        return success
+
+    async def create_task(
+        self,
+        title: str,
+        description: str,
+        agent: str,
+        task_type: str,
+        requires_review: bool = True,
+        metadata: Optional[dict] = None,
+    ) -> Optional[dict]:
+        """Create a new task.
+
+        Args:
+            title: Task title.
+            description: Task description.
+            agent: Agent name to assign the task to.
+            task_type: Type of task.
+            requires_review: Whether task requires user review.
+            metadata: Optional additional metadata.
+
+        Returns:
+            The created task data or None if creation failed.
+        """
+        if not self.task_manager:
+            self.logger.warning("Task manager not available")
+            return None
+
+        task = await self.task_manager.create_task(
+            title=title,
+            description=description,
+            agent=agent,
+            task_type=task_type,
+            requires_review=requires_review,
+            created_by=self.id,
+            metadata=metadata,
+        )
+
+        self.logger.info(f"Created task: {task['id']} - {title}")
+
+        return task
+
+    async def on_autonomous_tick(self) -> None:
+        """Called periodically when in autonomous mode.
+
+        Agents can override this to implement autonomous behavior like:
+        - Discovering and claiming tasks
+        - Creating new tasks based on analysis
+        - Monitoring project state
+
+        This is called from the agent's main loop when autonomous_mode is True.
+        """
+        pass  # Default implementation does nothing
 

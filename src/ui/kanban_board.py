@@ -3,6 +3,7 @@
 import logging
 import uuid
 from typing import Optional
+from uuid import UUID
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.agents.base import Message, MessageType
 from src.orchestrator.orchestrator import Orchestrator
 
 
@@ -339,7 +341,11 @@ class KanbanBoard(QWidget):
         self.orchestrator = orchestrator
         self.tasks: dict[str, dict] = {}  # task_id -> task_data
 
+        # Create a special UI subscriber ID for message bus
+        self.ui_subscriber_id = UUID(int=1)  # Special ID for UI components
+
         self._setup_ui()
+        self._subscribe_to_task_events()
 
     def _setup_ui(self) -> None:
         """Set up the UI layout."""
@@ -379,6 +385,66 @@ class KanbanBoard(QWidget):
         columns_layout.addWidget(self.done_column)
 
         layout.addLayout(columns_layout)
+
+    def _subscribe_to_task_events(self) -> None:
+        """Subscribe to task events from the message bus."""
+        if self.orchestrator and self.orchestrator.message_bus:
+            # Subscribe to task events
+            self.orchestrator.message_bus.subscribe(
+                self.ui_subscriber_id,
+                self._handle_task_event
+            )
+            self.logger.info("Subscribed to task events from message bus")
+
+    async def _handle_task_event(self, message: Message) -> None:
+        """Handle task events from the message bus.
+
+        Args:
+            message: The message containing task event data.
+        """
+        try:
+            if message.type == MessageType.TASK_CREATED:
+                task_data = message.payload.get("task")
+                if task_data:
+                    task_id = task_data.get("id")
+                    if task_id and task_id not in self.tasks:
+                        # Add new task to board
+                        self.tasks[task_id] = task_data
+                        self.refresh_board()
+                        self.logger.debug(f"Added task from event: {task_id}")
+
+            elif message.type == MessageType.TASK_STATE_CHANGED:
+                task_data = message.payload.get("task")
+                if task_data:
+                    task_id = task_data.get("id")
+                    if task_id:
+                        # Update task state
+                        self.tasks[task_id] = task_data
+                        self.refresh_board()
+                        self.logger.debug(f"Updated task from event: {task_id}")
+
+            elif message.type == MessageType.TASK_CLAIMED:
+                task_data = message.payload.get("task")
+                if task_data:
+                    task_id = task_data.get("id")
+                    if task_id:
+                        # Update task with claim info
+                        self.tasks[task_id] = task_data
+                        self.refresh_board()
+                        self.logger.debug(f"Task claimed: {task_id}")
+
+            elif message.type == MessageType.TASK_COMPLETED:
+                task_data = message.payload.get("task")
+                if task_data:
+                    task_id = task_data.get("id")
+                    if task_id:
+                        # Update task to completed state
+                        self.tasks[task_id] = task_data
+                        self.refresh_board()
+                        self.logger.debug(f"Task completed: {task_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling task event: {e}", exc_info=True)
 
     @Slot()
     def _on_create_task(self) -> None:

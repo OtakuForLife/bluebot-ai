@@ -361,3 +361,91 @@ Format as a structured list. Be specific and actionable."""
         """
         return self.project_timeline.copy()
 
+    async def on_autonomous_tick(self) -> None:
+        """Autonomous coordination tick.
+
+        This method is called periodically when autonomous_mode is True.
+        It checks if initial tasks need to be created from the vision.
+        """
+        if not self.autonomous_mode or not self.vision_approved:
+            return
+
+        # Check if we've already created initial tasks
+        if not self.task_manager:
+            self.logger.warning("Task manager not available")
+            return
+
+        # Get all tasks to see if we've already created initial tasks
+        all_tasks = await self.task_manager.get_all_tasks()
+
+        # If there are already tasks, don't create more initial tasks
+        if len(all_tasks) > 0:
+            self.logger.debug(f"Tasks already exist ({len(all_tasks)}), skipping initial task creation")
+            return
+
+        # Create initial tasks from vision
+        self.logger.info("Creating initial tasks from approved vision...")
+        await self._create_initial_tasks()
+
+    async def _create_initial_tasks(self) -> None:
+        """Create initial high-level tasks based on the vision.
+
+        This creates a standard set of initial tasks for game development.
+        """
+        initial_tasks = [
+            {
+                "title": "Define Core Game Mechanics",
+                "description": "Analyze the vision document and define the core gameplay mechanics, rules, and systems that will form the foundation of the game.",
+                "agent": "Game Designer",
+                "task_type": "design_mechanics",
+                "requires_review": True,
+            },
+            {
+                "title": "Create Art Style Guide",
+                "description": "Based on the vision, create a comprehensive art style guide including color palette, visual themes, and artistic direction.",
+                "agent": "Game Artist",
+                "task_type": "create_art_guide",
+                "requires_review": True,
+            },
+            {
+                "title": "Set Up Project Structure",
+                "description": "Initialize the Godot project structure with proper folder organization, base scenes, and core scripts.",
+                "agent": "Game Programmer",
+                "task_type": "setup_project",
+                "requires_review": False,
+            },
+            {
+                "title": "Define Audio Style",
+                "description": "Establish the audio direction including music genre, sound effect style, and overall audio atmosphere.",
+                "agent": "Audio Engineer",
+                "task_type": "define_audio_style",
+                "requires_review": True,
+            },
+            {
+                "title": "Create Test Plan",
+                "description": "Develop a comprehensive test plan covering functional testing, performance testing, and quality assurance procedures.",
+                "agent": "QA Tester",
+                "task_type": "create_test_plan",
+                "requires_review": True,
+            },
+        ]
+
+        for task_data in initial_tasks:
+            try:
+                task = await self.create_task(
+                    title=task_data["title"],
+                    description=task_data["description"],
+                    agent=task_data["agent"],
+                    task_type=task_data["task_type"],
+                    requires_review=task_data["requires_review"],
+                    metadata={"phase": "initial", "created_by_producer": True},
+                )
+
+                if task:
+                    self.logger.info(f"Created initial task: {task_data['title']}")
+                else:
+                    self.logger.error(f"Failed to create task: {task_data['title']}")
+
+            except Exception as e:
+                self.logger.error(f"Error creating task {task_data['title']}: {e}", exc_info=True)
+

@@ -220,3 +220,130 @@ class GameProgrammerAgent(Agent):
         """
         return self.knowledge_base.get_summary()
 
+    async def on_autonomous_tick(self) -> None:
+        """Autonomous task handling tick.
+
+        This method is called periodically when autonomous_mode is True.
+        It discovers available tasks and claims them for execution.
+        """
+        if not self.autonomous_mode:
+            return
+
+        # Discover available tasks for this agent
+        available_tasks = await self.discover_tasks()
+
+        if not available_tasks:
+            self.logger.debug("No available tasks for Game Programmer")
+            return
+
+        # Claim the first available task
+        task = available_tasks[0]
+        task_id = task.get("id")
+        task_title = task.get("title", "Unknown")
+
+        if not task_id:
+            self.logger.warning("Task has no ID, skipping")
+            return
+
+        self.logger.info(f"Found available task: {task_title}")
+
+        # Claim the task
+        success = await self.claim_task(task_id)
+
+        if success:
+            self.logger.info(f"Claimed task: {task_title}")
+            # Execute the task
+            await self._execute_autonomous_task(task)
+        else:
+            self.logger.warning(f"Failed to claim task: {task_title}")
+
+    async def _execute_autonomous_task(self, task: dict) -> None:
+        """Execute a claimed task autonomously.
+
+        Args:
+            task: The task data dictionary.
+        """
+        task_id = task.get("id")
+        task_type = task.get("task_type")
+        task_title = task.get("title")
+        task_description = task.get("description")
+
+        if not task_id:
+            self.logger.warning("Task has no ID, cannot execute")
+            return
+
+        self.logger.info(f"Executing task: {task_title} (type: {task_type})")
+
+        try:
+            # Simulate task execution based on task type
+            if task_type == "setup_project":
+                result = await self._autonomous_setup_project(task)
+            elif task_type == "create_script":
+                result = await self._autonomous_create_script(task)
+            elif task_type == "implement_system":
+                result = await self._autonomous_implement_system(task)
+            else:
+                self.logger.warning(f"Unknown task type: {task_type}, marking as complete")
+                result = {"status": "completed", "message": f"Task type {task_type} not yet implemented"}
+
+            # Complete the task
+            await self.complete_task(task_id, result)
+            self.logger.info(f"Completed task: {task_title}")
+
+        except Exception as e:
+            self.logger.error(f"Error executing task {task_title}: {e}", exc_info=True)
+
+    async def _autonomous_setup_project(self, task: dict) -> dict:
+        """Autonomously set up project structure.
+
+        Args:
+            task: The task data dictionary.
+
+        Returns:
+            Result dictionary with task outcome.
+        """
+        self.logger.info("Setting up project structure...")
+
+        # Simulate project setup work
+        return {
+            "status": "completed",
+            "message": "Project structure initialized with base folders and scenes",
+            "files_created": ["res://scenes/main.tscn", "res://scripts/game_manager.gd"],
+        }
+
+    async def _autonomous_create_script(self, task: dict) -> dict:
+        """Autonomously create a script.
+
+        Args:
+            task: The task data dictionary.
+
+        Returns:
+            Result dictionary with task outcome.
+        """
+        self.logger.info("Creating script...")
+
+        # Simulate script creation
+        return {
+            "status": "completed",
+            "message": "Script created successfully",
+            "script_path": "res://scripts/player.gd",
+        }
+
+    async def _autonomous_implement_system(self, task: dict) -> dict:
+        """Autonomously implement a game system.
+
+        Args:
+            task: The task data dictionary.
+
+        Returns:
+            Result dictionary with task outcome.
+        """
+        self.logger.info("Implementing game system...")
+
+        # Simulate system implementation
+        return {
+            "status": "completed",
+            "message": "Game system implemented",
+            "systems_created": ["movement", "collision"],
+        }
+

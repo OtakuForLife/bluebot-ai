@@ -204,6 +204,19 @@ class MainWindow(QMainWindow):
             agent="System"
         )
 
+        # Create task in task manager
+        self.async_helper.run_coroutine(
+            self.orchestrator.task_manager.create_task(
+                title=task_data.get("title", ""),
+                description=task_data.get("description", ""),
+                agent=task_data.get("agent", ""),
+                task_type=task_data.get("task_type", ""),
+                requires_review=task_data.get("requires_review", True),
+                created_by=None,  # User-created task
+                metadata={}
+            )
+        )
+
     @Slot(str, str)
     def _on_task_state_changed(self, task_id: str, new_state: str) -> None:
         """Handle task state change.
@@ -217,6 +230,11 @@ class MainWindow(QMainWindow):
             f"Task state changed to: {new_state}",
             level="INFO",
             agent="System"
+        )
+
+        # Update task state in task manager
+        self.async_helper.run_coroutine(
+            self.orchestrator.task_manager.update_task_state(task_id, new_state)
         )
 
     @Slot(str, str, dict)
