@@ -6,33 +6,26 @@ from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QFileDialog,
-    QFileSystemModel,
     QGroupBox,
     QHBoxLayout,
     QLabel,
-    QMenu,
     QPushButton,
     QScrollArea,
-    QTreeView,
     QVBoxLayout,
     QWidget,
 )
 
 
 class ProjectDetailView(QWidget):
-    """Widget showing detailed project information and file tree.
-    
-    Displays project metadata, genres, elements, and a file tree
-    of the project directory structure.
-    
+    """Widget showing detailed project information.
+
+    Displays project metadata, genres, elements, and vision management.
+
     Signals:
-        file_selected: Emitted when a file is selected in the tree.
         vision_creation_requested: Emitted when user requests vision creation.
         vision_approval_requested: Emitted when user approves the vision.
     """
 
-    file_selected = Signal(str)
     vision_creation_requested = Signal(dict)  # project_data
     vision_approval_requested = Signal(dict)  # vision_data
     
@@ -138,45 +131,7 @@ class ProjectDetailView(QWidget):
 
         details_layout.addWidget(vision_group)
 
-        # File tree section
-        file_tree_group = QGroupBox("Project Files")
-        file_tree_layout = QVBoxLayout(file_tree_group)
-        
-        # Toolbar for file operations
-        toolbar_layout = QHBoxLayout()
-        
-        add_file_button = QPushButton("+ Add File")
-        add_file_button.clicked.connect(self._on_add_file)
-        toolbar_layout.addWidget(add_file_button)
-        
-        add_folder_button = QPushButton("+ Add Folder")
-        add_folder_button.clicked.connect(self._on_add_folder)
-        toolbar_layout.addWidget(add_folder_button)
-        
-        refresh_button = QPushButton("Refresh")
-        refresh_button.clicked.connect(self._on_refresh)
-        toolbar_layout.addWidget(refresh_button)
-        
-        toolbar_layout.addStretch()
-        
-        file_tree_layout.addLayout(toolbar_layout)
-        
-        # File tree view
-        self.file_tree = QTreeView()
-        self.file_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.file_tree.customContextMenuRequested.connect(self._on_context_menu)
-        self.file_tree.doubleClicked.connect(self._on_file_double_clicked)
-        
-        # File system model
-        self.file_model = QFileSystemModel()
-        self.file_tree.setModel(self.file_model)
-        
-        # Hide size, type, and date columns for cleaner view
-        self.file_tree.setColumnWidth(0, 300)
-        
-        file_tree_layout.addWidget(self.file_tree)
-        
-        details_layout.addWidget(file_tree_group)
+
         
         layout.addWidget(self.details_container)
 
@@ -211,13 +166,11 @@ class ProjectDetailView(QWidget):
         else:
             self.elements_label.setText("No game elements selected")
 
-        # Set up file tree
+        # Check if vision document already exists
         project_path = project_data.get("path")
 
         if project_path and Path(project_path).exists():
-            self.file_model.setRootPath(project_path)
-            self.file_tree.setRootIndex(self.file_model.index(project_path))
-            self.logger.info(f"Loaded project files from: {project_path}")
+            self.logger.info(f"Loaded project from: {project_path}")
 
             # Check if vision document already exists
             vision_path = Path(project_path) / "design" / "VISION.md"
@@ -258,203 +211,7 @@ class ProjectDetailView(QWidget):
         self.details_container.hide()
         self.placeholder.show()
 
-    @Slot()
-    def _on_add_file(self) -> None:
-        """Handle add file button click."""
-        if not self.current_project:
-            return
 
-        project_path = self.current_project.get("path")
-        if not project_path:
-            return
-
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select File to Add",
-            str(Path.home()),
-            "All Files (*.*)"
-        )
-
-        if file_path:
-            try:
-                import shutil
-                source = Path(file_path)
-                destination = Path(project_path) / source.name
-
-                shutil.copy2(source, destination)
-                self.logger.info(f"Added file: {source.name}")
-
-                # Refresh tree
-                self._on_refresh()
-
-            except Exception as e:
-                self.logger.error(f"Failed to add file: {e}")
-
-    @Slot()
-    def _on_add_folder(self) -> None:
-        """Handle add folder button click."""
-        if not self.current_project:
-            return
-
-        project_path = self.current_project.get("path")
-        if not project_path:
-            return
-
-        from PySide6.QtWidgets import QInputDialog
-
-        folder_name, ok = QInputDialog.getText(
-            self,
-            "Create Folder",
-            "Folder name:"
-        )
-
-        if ok and folder_name:
-            try:
-                new_folder = Path(project_path) / folder_name
-                new_folder.mkdir(parents=True, exist_ok=True)
-                self.logger.info(f"Created folder: {folder_name}")
-
-                # Refresh tree
-                self._on_refresh()
-
-            except Exception as e:
-                self.logger.error(f"Failed to create folder: {e}")
-
-    @Slot()
-    def _on_refresh(self) -> None:
-        """Refresh the file tree."""
-        if self.current_project:
-            project_path = self.current_project.get("path")
-            if project_path:
-                # Force model refresh
-                self.file_model.setRootPath("")
-                self.file_model.setRootPath(project_path)
-                self.file_tree.setRootIndex(self.file_model.index(project_path))
-                self.logger.info("Refreshed file tree")
-
-    @Slot()
-    def _on_context_menu(self, position) -> None:
-        """Show context menu for file operations.
-
-        Args:
-            position: Position where context menu was requested.
-        """
-        index = self.file_tree.indexAt(position)
-        if not index.isValid():
-            return
-
-        file_path = self.file_model.filePath(index)
-
-        menu = QMenu(self)
-
-        open_action = menu.addAction("Open")
-        delete_action = menu.addAction("Delete")
-        rename_action = menu.addAction("Rename")
-
-        action = menu.exec(self.file_tree.viewport().mapToGlobal(position))
-
-        if action == open_action:
-            self._open_file(file_path)
-        elif action == delete_action:
-            self._delete_file(file_path)
-        elif action == rename_action:
-            self._rename_file(file_path)
-
-    @Slot()
-    def _on_file_double_clicked(self, index) -> None:
-        """Handle file double-click.
-
-        Args:
-            index: Model index of the clicked item.
-        """
-        file_path = self.file_model.filePath(index)
-
-        if Path(file_path).is_file():
-            self._open_file(file_path)
-
-    def _open_file(self, file_path: str) -> None:
-        """Open a file with the default system application.
-
-        Args:
-            file_path: Path to the file to open.
-        """
-        try:
-            import os
-            import platform
-
-            if platform.system() == 'Windows':
-                os.startfile(file_path)
-            elif platform.system() == 'Darwin':  # macOS
-                os.system(f'open "{file_path}"')
-            else:  # Linux
-                os.system(f'xdg-open "{file_path}"')
-
-            self.logger.info(f"Opened file: {file_path}")
-            self.file_selected.emit(file_path)
-
-        except Exception as e:
-            self.logger.error(f"Failed to open file: {e}")
-
-    def _delete_file(self, file_path: str) -> None:
-        """Delete a file or folder.
-
-        Args:
-            file_path: Path to the file or folder to delete.
-        """
-        from PySide6.QtWidgets import QMessageBox
-
-        reply = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Are you sure you want to delete:\n{Path(file_path).name}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                path = Path(file_path)
-                if path.is_file():
-                    path.unlink()
-                elif path.is_dir():
-                    import shutil
-                    shutil.rmtree(path)
-
-                self.logger.info(f"Deleted: {file_path}")
-                self._on_refresh()
-
-            except Exception as e:
-                self.logger.error(f"Failed to delete: {e}")
-                QMessageBox.warning(self, "Error", f"Failed to delete: {e}")
-
-    def _rename_file(self, file_path: str) -> None:
-        """Rename a file or folder.
-
-        Args:
-            file_path: Path to the file or folder to rename.
-        """
-        from PySide6.QtWidgets import QInputDialog
-
-        old_path = Path(file_path)
-
-        new_name, ok = QInputDialog.getText(
-            self,
-            "Rename",
-            "New name:",
-            text=old_path.name
-        )
-
-        if ok and new_name and new_name != old_path.name:
-            try:
-                new_path = old_path.parent / new_name
-                old_path.rename(new_path)
-
-                self.logger.info(f"Renamed: {old_path.name} -> {new_name}")
-                self._on_refresh()
-
-            except Exception as e:
-                self.logger.error(f"Failed to rename: {e}")
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.warning(self, "Error", f"Failed to rename: {e}")
 
     @Slot()
     def _on_create_vision_clicked(self) -> None:

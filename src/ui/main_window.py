@@ -22,9 +22,10 @@ from src.orchestrator.agent_factory import AgentFactory
 from src.orchestrator.orchestrator import Orchestrator
 from src.ui.agent_panel import AgentPanel
 from src.ui.async_helper import AsyncHelper
+from src.ui.file_explorer_panel import FileExplorerPanel
+from src.ui.kanban_board import KanbanBoard
 from src.ui.llm_config_panel import LLMConfigPanel
 from src.ui.output_panel import OutputPanel
-from src.ui.task_panel import TaskPanel
 
 
 class MainWindow(QMainWindow):
@@ -99,15 +100,17 @@ class MainWindow(QMainWindow):
         # Create actual panel widgets (no ProjectPanel - we have a single project)
         from src.ui.project_detail_view import ProjectDetailView
         self.project_detail_view = ProjectDetailView()
+        self.file_explorer_panel = FileExplorerPanel()
         self.agent_panel = AgentPanel(self.orchestrator)
-        self.task_panel = TaskPanel(self.orchestrator)
+        self.kanban_board = KanbanBoard(self.orchestrator)
         self.output_panel = OutputPanel()
         self.llm_config_panel = LLMConfigPanel()
 
-        # Add tabs (Project first, then Agents, Tasks, Output, LLM Settings)
+        # Add tabs (Project first, then File Explorer, Agents, Tasks, Output, LLM Settings)
         self.tab_widget.addTab(self.project_detail_view, "Project")
+        self.tab_widget.addTab(self.file_explorer_panel, "File Explorer")
         self.tab_widget.addTab(self.agent_panel, "Agents")
-        self.tab_widget.addTab(self.task_panel, "Tasks")
+        self.tab_widget.addTab(self.kanban_board, "Tasks")
         self.tab_widget.addTab(self.output_panel, "Output")
         self.tab_widget.addTab(self.llm_config_panel, "LLM Settings")
     
@@ -149,8 +152,10 @@ class MainWindow(QMainWindow):
     
     def _connect_signals(self) -> None:
         """Connect internal signals."""
-        # Connect task panel to output panel
-        self.task_panel.task_submitted.connect(self._on_task_submitted)
+        # Connect Kanban board to output panel
+        self.kanban_board.task_submitted.connect(self._on_task_submitted)
+        self.kanban_board.task_created.connect(self._on_task_created)
+        self.kanban_board.task_state_changed.connect(self._on_task_state_changed)
 
         # Connect LLM config panel
         self.llm_config_panel.provider_created.connect(self._on_provider_created)
@@ -185,9 +190,38 @@ class MainWindow(QMainWindow):
             agent="System"
         )
 
+    @Slot(dict)
+    def _on_task_created(self, task_data: dict) -> None:
+        """Handle task creation from Kanban board.
+
+        Args:
+            task_data: Task data dictionary.
+        """
+        self.logger.info(f"Task created: {task_data.get('title')}")
+        self.output_panel.add_log(
+            f"Task created: {task_data.get('title')} assigned to {task_data.get('agent')}",
+            level="INFO",
+            agent="System"
+        )
+
+    @Slot(str, str)
+    def _on_task_state_changed(self, task_id: str, new_state: str) -> None:
+        """Handle task state change.
+
+        Args:
+            task_id: Task ID.
+            new_state: New state.
+        """
+        self.logger.info(f"Task {task_id} moved to {new_state}")
+        self.output_panel.add_log(
+            f"Task state changed to: {new_state}",
+            level="INFO",
+            agent="System"
+        )
+
     @Slot(str, str, dict)
     def _on_task_submitted(self, agent_name: str, task_type: str, payload: dict) -> None:
-        """Handle task submission from task panel.
+        """Handle task submission from Kanban board.
 
         Args:
             agent_name: Name of the target agent.
@@ -265,7 +299,11 @@ class MainWindow(QMainWindow):
         self.project_detail_view.set_project(project_data)
 
         if project_path_str:
-            self.set_project_path(Path(project_path_str))
+            project_path = Path(project_path_str)
+            self.set_project_path(project_path)
+
+            # Set project path in file explorer
+            self.file_explorer_panel.set_project_path(project_path)
 
         self.output_panel.add_log(
             f"Project loaded: {project_name}",

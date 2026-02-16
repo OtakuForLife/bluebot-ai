@@ -11,6 +11,21 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+"""
+design
+    VISION.md
+    MECHANICS.md
+    STORY.md
+    UX.md
+    GRAPHICS.md
+    AUDIO.md
+graphics
+audio
+texts
+godot
+    project.godot
+project.json
+"""
 
 # Standard project directory constants
 SCRIPTS_DIR = "scripts"
