@@ -25,6 +25,7 @@ from src.ui.async_helper import AsyncHelper
 from src.ui.file_explorer_panel import FileExplorerPanel
 from src.ui.kanban_board import KanbanBoard
 from src.ui.llm_config_panel import LLMConfigPanel
+from src.ui.logging_handler import LoggingBridge
 from src.ui.output_panel import OutputPanel
 
 
@@ -63,6 +64,10 @@ class MainWindow(QMainWindow):
         # Create agent factory
         self.agent_factory = AgentFactory(self.orchestrator)
         self.agents: dict[str, any] = {} # type: ignore
+
+        # Create logging bridge for routing logs to UI
+        self.logging_bridge = LoggingBridge()
+        self.log_handler = self.logging_bridge.create_handler(level=logging.DEBUG)
 
         self._setup_ui()
         self._create_menus()
@@ -152,6 +157,9 @@ class MainWindow(QMainWindow):
     
     def _connect_signals(self) -> None:
         """Connect internal signals."""
+        # Connect logging handler to output panel
+        self.log_handler.log_message.connect(self.output_panel.add_log)
+
         # Connect Kanban board to output panel
         self.kanban_board.task_submitted.connect(self._on_task_submitted)
         self.kanban_board.task_created.connect(self._on_task_created)
@@ -175,11 +183,18 @@ class MainWindow(QMainWindow):
         """Initialize the orchestrator and create all agents."""
         self.logger.info("Initializing orchestrator...")
 
+        # Attach logging handler to root logger to capture all logs
+        self.logging_bridge.attach_to_root()
+
         # Start orchestrator
         self.async_helper.run_async(self.orchestrator.start())
 
         # Create all agents
         self.agents = self.agent_factory.create_all_agents()
+
+        # Add agents to output panel filter
+        for agent in self.agents.values():
+            self.output_panel.add_agent_to_filter(agent.name)
 
         self.logger.info(f"Initialized {len(self.agents)} agents")
 
