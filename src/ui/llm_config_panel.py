@@ -1,6 +1,8 @@
 """LLM configuration panel for managing AI model providers."""
 
+import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt, Signal, Slot
@@ -18,7 +20,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.llm import BaseLLMProvider, LLMConfig, OllamaProvider
+from src.agents.llm import BaseLLMProvider, LLMConfig
+from src.agents.llm.factory import ProviderFactory
+from src.agents.llm.registry import ProviderRegistry
 
 
 class LLMConfigPanel(QWidget):
@@ -35,6 +39,8 @@ class LLMConfigPanel(QWidget):
     config_changed = Signal(LLMConfig)
     provider_created = Signal(BaseLLMProvider)
     
+    SETTINGS_FILE = Path("settings.json")
+
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Initialize the LLM configuration panel.
 
@@ -47,6 +53,7 @@ class LLMConfigPanel(QWidget):
         self.current_provider: Optional[BaseLLMProvider] = None
 
         self._setup_ui()
+        self._load_config()
     
     def _setup_ui(self) -> None:
         """Set up the UI layout."""
@@ -59,12 +66,16 @@ class LLMConfigPanel(QWidget):
         # Provider selection
         provider_group = QGroupBox("Provider")
         provider_layout = QFormLayout(provider_group)
-        
+
         self.provider_combo = QComboBox()
-        self.provider_combo.addItems(["Ollama", "OpenAI (Coming Soon)", "Anthropic (Coming Soon)"])
+        # Get available providers from registry
+        available_providers = ProviderRegistry.list_providers()
+        # Format provider names for display (capitalize first letter)
+        display_providers = [p.capitalize() for p in available_providers]
+        self.provider_combo.addItems(display_providers)
         self.provider_combo.currentTextChanged.connect(self._on_provider_changed)
         provider_layout.addRow("Provider:", self.provider_combo)
-        
+
         layout.addWidget(provider_group)
         
         # Connection settings
@@ -105,7 +116,14 @@ class LLMConfigPanel(QWidget):
         self.top_p_spin.setSingleStep(0.1)
         self.top_p_spin.setValue(1.0)
         model_layout.addRow("Top P:", self.top_p_spin)
-        
+
+        self.check_interval_spin = QSpinBox()
+        self.check_interval_spin.setRange(5, 3600)
+        self.check_interval_spin.setSingleStep(5)
+        self.check_interval_spin.setValue(10)
+        self.check_interval_spin.setSuffix(" s")
+        model_layout.addRow("Check Interval:", self.check_interval_spin)
+
         layout.addWidget(model_group)
         
         # Action buttons
@@ -130,13 +148,77 @@ class LLMConfigPanel(QWidget):
         
         layout.addStretch()
     
+    def _load_config(self) -> None:
+        """Populate UI fields from settings.json if it exists."""
+        if not self.SETTINGS_FILE.exists():
+            return
+        try:
+            data = json.loads(self.SETTINGS_FILE.read_text(encoding="utf-8"))
+            llm = data.get("llm", {})
+
+            if provider := llm.get("provider"):
+                # Find the matching combo entry (stored lowercase, displayed capitalised)
+                index = self.provider_combo.findText(
+                    provider.capitalize(), Qt.MatchFlag.MatchFixedString
+                )
+                if index >= 0:
+                    self.provider_combo.setCurrentIndex(index)
+
+            if model := llm.get("model"):
+                self.model_input.setText(model)
+            if base_url := llm.get("base_url"):
+                self.base_url_input.setText(base_url)
+            if (temp := llm.get("temperature")) is not None:
+                self.temperature_spin.setValue(float(temp))
+            if (max_tok := llm.get("max_tokens")) is not None:
+                self.max_tokens_spin.setValue(int(max_tok))
+            if (top_p := llm.get("top_p")) is not None:
+                self.top_p_spin.setValue(float(top_p))
+            if (interval := llm.get("check_interval")) is not None:
+                self.check_interval_spin.setValue(int(interval))
+
+            self.logger.info("LLM configuration loaded from settings.json")
+        except Exception as exc:
+            self.logger.warning(f"Could not load settings.json: {exc}")
+
+    def _save_config(self) -> None:
+        """Persist the current UI fields to settings.json (api_key excluded)."""
+        config = self._get_current_config()
+        data: dict = {}
+        if self.SETTINGS_FILE.exists():
+            try:
+                data = json.loads(self.SETTINGS_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass  # overwrite corrupt file
+
+        data["llm"] = {
+            "provider": config.provider,
+            "model": config.model,
+            "base_url": config.base_url,
+            "temperature": config.temperature,
+            "max_tokens": config.max_tokens,
+            "top_p": config.top_p,
+            "check_interval": self.check_interval_spin.value(),
+        }
+        try:
+            self.SETTINGS_FILE.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            self.logger.info("LLM configuration saved to settings.json")
+        except Exception as exc:
+            self.logger.warning(f"Could not save settings.json: {exc}")
+
     def _get_current_config(self) -> LLMConfig:
         """Get the current configuration from UI inputs.
 
         Returns:
             LLMConfig object with current settings.
         """
+        # Get provider name from combo (lowercase for internal use)
+        provider_name = self.provider_combo.currentText().lower()
+
         return LLMConfig(
+            provider=provider_name,
             model=self.model_input.text(),
             temperature=self.temperature_spin.value(),
             max_tokens=self.max_tokens_spin.value(),
@@ -155,14 +237,22 @@ class LLMConfigPanel(QWidget):
         self.logger.info(f"Provider changed to: {provider}")
 
         # Enable/disable API key based on provider
-        if provider == "Ollama":
+        provider_lower = provider.lower()
+        if provider_lower == "ollama":
             self.api_key_input.setEnabled(False)
             self.api_key_input.setPlaceholderText("Not required for Ollama")
             self.base_url_input.setText("http://localhost:11434")
+            self.model_input.setText("qwen3-vl:8b")
+        elif provider_lower == "openai":
+            self.api_key_input.setEnabled(True)
+            self.api_key_input.setPlaceholderText("Enter OpenAI API key")
+            self.base_url_input.setText("")
+            self.model_input.setText("gpt-4o-mini")
         else:
             self.api_key_input.setEnabled(True)
             self.api_key_input.setPlaceholderText("Enter API key")
             self.base_url_input.setText("")
+            self.model_input.setText("")
 
     @Slot()
     def _on_test_connection(self) -> None:
@@ -171,27 +261,33 @@ class LLMConfigPanel(QWidget):
         self.status_label.setText("Testing connection...")
         self.status_label.setStyleSheet("color: orange;")
 
-        try:
-            config = self._get_current_config()
+        async def test_async():
+            try:
+                config = self._get_current_config()
+                provider = ProviderFactory.create(config)
 
-            # Create provider based on selection
-            provider_name = self.provider_combo.currentText()
-            if provider_name == "Ollama":
-                provider = OllamaProvider(config)
-            else:
-                self.status_label.setText(f"{provider_name} not yet implemented")
+                # Test connection
+                is_available = await provider.is_available()
+
+                if is_available:
+                    self.status_label.setText("Connection successful!")
+                    self.status_label.setStyleSheet("color: green;")
+                    self.logger.info("Connection test successful")
+                else:
+                    self.status_label.setText("Connection failed: Provider not available")
+                    self.status_label.setStyleSheet("color: red;")
+                    self.logger.error("Connection test failed: Provider not available")
+
+            except Exception as e:
+                self.status_label.setText(f"Connection failed: {str(e)}")
                 self.status_label.setStyleSheet("color: red;")
-                return
+                self.logger.error(f"Connection test failed: {e}")
 
-            # Test connection (this would be async in real implementation)
-            self.status_label.setText("Connection successful!")
-            self.status_label.setStyleSheet("color: green;")
-            self.logger.info("Connection test successful")
-
-        except Exception as e:
-            self.status_label.setText(f"Connection failed: {str(e)}")
-            self.status_label.setStyleSheet("color: red;")
-            self.logger.error(f"Connection test failed: {e}")
+        # Run the async test
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(test_async())
 
     @Slot()
     def _on_apply_config(self) -> None:
@@ -201,14 +297,11 @@ class LLMConfigPanel(QWidget):
         try:
             config = self._get_current_config()
 
-            # Create provider based on selection
-            provider_name = self.provider_combo.currentText()
-            if provider_name == "Ollama":
-                self.current_provider = OllamaProvider(config)
-            else:
-                self.status_label.setText(f"{provider_name} not yet implemented")
-                self.status_label.setStyleSheet("color: red;")
-                return
+            # Create provider using ProviderFactory
+            self.current_provider = ProviderFactory.create(config)
+
+            # Persist before emitting so the saved state is always consistent
+            self._save_config()
 
             # Emit signals
             self.config_changed.emit(config)
@@ -231,6 +324,10 @@ class LLMConfigPanel(QWidget):
         """
         return self.current_provider
 
+    def get_check_interval(self) -> int:
+        """Return the configured producer check interval in seconds."""
+        return self.check_interval_spin.value()
+
     def apply_default_config(self) -> None:
         """Apply the default configuration automatically on startup.
 
@@ -242,20 +339,16 @@ class LLMConfigPanel(QWidget):
             # Get the default configuration from UI
             config = self._get_current_config()
 
-            # Create Ollama provider with default settings
-            provider_name = self.provider_combo.currentText()
-            if provider_name == "Ollama":
-                self.current_provider = OllamaProvider(config)
+            # Create provider using ProviderFactory
+            self.current_provider = ProviderFactory.create(config)
 
-                # Emit signals to distribute provider to agents
-                self.config_changed.emit(config)
-                self.provider_created.emit(self.current_provider)
+            # Emit signals to distribute provider to agents
+            self.config_changed.emit(config)
+            self.provider_created.emit(self.current_provider)
 
-                self.status_label.setText("Default configuration applied automatically")
-                self.status_label.setStyleSheet("color: green;")
-                self.logger.info("Default configuration applied successfully")
-            else:
-                self.logger.warning(f"Provider {provider_name} not supported for auto-config")
+            self.status_label.setText("Default configuration applied automatically")
+            self.status_label.setStyleSheet("color: green;")
+            self.logger.info("Default configuration applied successfully")
 
         except Exception as e:
             self.status_label.setText(f"Auto-config failed: {str(e)}")

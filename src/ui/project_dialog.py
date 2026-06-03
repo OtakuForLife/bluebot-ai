@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.project.files import NewProjectData
+
 
 class NewProjectDialog(QDialog):
     """Dialog for creating a new game project.
@@ -65,10 +67,19 @@ class NewProjectDialog(QDialog):
         basic_layout.addRow("Project Name*:", self.name_input)
         
         self.description_input = QPlainTextEdit()
-        self.description_input.setPlaceholderText("Describe your game idea...")
-        self.description_input.setMaximumHeight(100)
+        self.description_input.setPlaceholderText("Short one-line summary of the game...")
+        self.description_input.setMaximumHeight(60)
         basic_layout.addRow("Description:", self.description_input)
-        
+
+        self.brief_input = QPlainTextEdit()
+        self.brief_input.setPlaceholderText(
+            "Describe the game in detail — genre feel, core loop, art style, "
+            "target audience, inspirations, anything you care about.\n\n"
+            "Agents will use this as their creative brief."
+        )
+        self.brief_input.setMinimumHeight(120)
+        basic_layout.addRow("Game Brief*:", self.brief_input)
+
         # Project location (parent directory)
         location_layout = QHBoxLayout()
         self.location_input = QLineEdit()
@@ -103,7 +114,8 @@ class NewProjectDialog(QDialog):
             
             checkbox = QCheckBox(genre)
             self.genre_checkboxes[genre] = checkbox
-            row_layout.addWidget(checkbox)
+            if(row_layout):
+                row_layout.addWidget(checkbox)
         
         layout.addWidget(genre_group)
         
@@ -129,7 +141,8 @@ class NewProjectDialog(QDialog):
             
             checkbox = QCheckBox(element)
             self.element_checkboxes[element] = checkbox
-            row_layout.addWidget(checkbox)
+            if(row_layout):
+                row_layout.addWidget(checkbox)
         
         layout.addWidget(elements_group)
         
@@ -160,6 +173,7 @@ class NewProjectDialog(QDialog):
         # Validate inputs
         name = self.name_input.text().strip()
         location = self.location_input.text().strip()
+        brief = self.brief_input.toPlainText().strip()
 
         if not name:
             from PySide6.QtWidgets import QMessageBox
@@ -169,6 +183,11 @@ class NewProjectDialog(QDialog):
         if not location:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Validation Error", "Parent directory is required.")
+            return
+
+        if not brief:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Validation Error", "Game brief is required.")
             return
 
         # Collect selected genres
@@ -187,7 +206,8 @@ class NewProjectDialog(QDialog):
         project_data = {
             "name": name,
             "description": self.description_input.toPlainText().strip(),
-            "location": location,
+            "brief": brief,
+            "path": str(Path(location) / name),
             "genres": selected_genres,
             "elements": selected_elements,
         }
@@ -196,7 +216,7 @@ class NewProjectDialog(QDialog):
         self.project_created.emit(project_data)
         self.accept()
 
-    def get_project_data(self) -> Optional[dict]:
+    def get_project_data(self) -> Optional[NewProjectData]:
         """Get the project data if dialog was accepted.
 
         Returns:
@@ -209,18 +229,19 @@ class NewProjectDialog(QDialog):
             # Calculate full project path
             project_path = str(Path(location) / name)
 
-            return {
-                "name": name,
-                "description": self.description_input.toPlainText().strip(),
-                "path": project_path,
-                "genres": [
+            return NewProjectData(
+                name=name,
+                description=self.description_input.toPlainText().strip(),
+                brief=self.brief_input.toPlainText().strip(),
+                path=project_path,
+                genres=[
                     genre for genre, checkbox in self.genre_checkboxes.items()
                     if checkbox.isChecked()
                 ],
-                "elements": [
+                elements=[
                     element for element, checkbox in self.element_checkboxes.items()
                     if checkbox.isChecked()
                 ],
-            }
+            )
         return None
 

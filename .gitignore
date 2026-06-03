@@ -1,5 +1,9 @@
 .venv
 .pytest_cache
+.zencoder
+.zenflow
+
 __pycache__
 /godot
 projects.json
+settings.json

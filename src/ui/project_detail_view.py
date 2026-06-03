@@ -21,13 +21,7 @@ class ProjectDetailView(QWidget):
 
     Displays project metadata, genres, elements, and vision management.
 
-    Signals:
-        vision_creation_requested: Emitted when user requests vision creation.
-        vision_approval_requested: Emitted when user approves the vision.
     """
-
-    vision_creation_requested = Signal(dict)  # project_data
-    vision_approval_requested = Signal(dict)  # vision_data
     
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Initialize the project detail view.
@@ -98,41 +92,7 @@ class ProjectDetailView(QWidget):
         info_scroll.setWidget(info_widget)
         details_layout.addWidget(info_scroll)
 
-        # Vision section
-        vision_group = QGroupBox("Project Vision")
-        vision_layout = QVBoxLayout(vision_group)
 
-        self.vision_status_label = QLabel("No vision created yet")
-        self.vision_status_label.setStyleSheet("color: #666; font-style: italic;")
-        vision_layout.addWidget(self.vision_status_label)
-
-        vision_buttons_layout = QHBoxLayout()
-
-        self.create_vision_button = QPushButton("Create Vision")
-        self.create_vision_button.setToolTip("Generate a comprehensive game vision document")
-        self.create_vision_button.clicked.connect(self._on_create_vision_clicked)
-        vision_buttons_layout.addWidget(self.create_vision_button)
-
-        self.view_vision_button = QPushButton("View Vision")
-        self.view_vision_button.setToolTip("View the generated vision document")
-        self.view_vision_button.clicked.connect(self._on_view_vision_clicked)
-        self.view_vision_button.setEnabled(False)
-        vision_buttons_layout.addWidget(self.view_vision_button)
-
-        self.approve_vision_button = QPushButton("Approve Vision")
-        self.approve_vision_button.setToolTip("Approve the vision and start autonomous development")
-        self.approve_vision_button.clicked.connect(self._on_approve_vision_clicked)
-        self.approve_vision_button.setEnabled(False)
-        self.approve_vision_button.setStyleSheet("background-color: #4CAF50; color: white;")
-        vision_buttons_layout.addWidget(self.approve_vision_button)
-
-        vision_buttons_layout.addStretch()
-        vision_layout.addLayout(vision_buttons_layout)
-
-        details_layout.addWidget(vision_group)
-
-
-        
         layout.addWidget(self.details_container)
 
         # Initially hide details and show placeholder
@@ -176,17 +136,7 @@ class ProjectDetailView(QWidget):
             vision_path = Path(project_path) / "design" / "VISION.md"
             if vision_path.exists():
                 self.logger.info(f"Found existing vision document at: {vision_path}")
-                self.update_vision_status(
-                    "✓ Vision created - Ready for review",
-                    vision_created=True
-                )
-            else:
-                # Reset vision status for new/different project
-                self.vision_status_label.setText("No vision created yet")
-                self.vision_status_label.setStyleSheet("color: #666; font-style: italic;")
-                self.create_vision_button.setEnabled(True)
-                self.view_vision_button.setEnabled(False)
-                self.approve_vision_button.setEnabled(False)
+                # Vision UI removed - vision is just another file now
         else:
             self.logger.warning(f"Project path not found: {project_path}")
 
@@ -204,129 +154,6 @@ class ProjectDetailView(QWidget):
         self.genres_label.setText("")
         self.elements_label.setText("")
 
-        # Clear file tree
-        self.file_model.setRootPath("")
-
         # Show placeholder, hide details
         self.details_container.hide()
         self.placeholder.show()
-
-
-
-    @Slot()
-    def _on_create_vision_clicked(self) -> None:
-        """Handle create vision button click."""
-        if self.current_project:
-            self.logger.info(f"Requesting vision creation for: {self.current_project.get('name')}")
-
-            # Update UI to show vision is being created
-            self.vision_status_label.setText("Creating vision document...")
-            self.vision_status_label.setStyleSheet("color: #FF9800; font-style: italic;")
-            self.create_vision_button.setEnabled(False)
-
-            # Emit signal to main window to send task to Game Designer
-            self.vision_creation_requested.emit(self.current_project)
-
-    @Slot()
-    def _on_view_vision_clicked(self) -> None:
-        """Handle view vision button click."""
-        if self.current_project:
-            # Check if vision file exists
-            project_path = Path(self.current_project.get("path", ""))
-            vision_path = project_path / "design" / "VISION.md"
-
-            if vision_path.exists():
-                try:
-                    vision_content = vision_path.read_text(encoding="utf-8")
-
-                    # Create a dialog to display the vision
-                    from PySide6.QtWidgets import QDialog, QTextEdit, QDialogButtonBox
-
-                    dialog = QDialog(self)
-                    dialog.setWindowTitle("Game Vision Document")
-                    dialog.resize(800, 600)
-
-                    layout = QVBoxLayout(dialog)
-
-                    text_edit = QTextEdit()
-                    text_edit.setReadOnly(True)
-                    text_edit.setMarkdown(vision_content)
-                    layout.addWidget(text_edit)
-
-                    button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-                    button_box.rejected.connect(dialog.reject)
-                    layout.addWidget(button_box)
-
-                    dialog.exec()
-
-                except Exception as e:
-                    self.logger.error(f"Failed to read vision document: {e}")
-                    from PySide6.QtWidgets import QMessageBox
-                    QMessageBox.warning(self, "Error", f"Failed to read vision document: {e}")
-            else:
-                from PySide6.QtWidgets import QMessageBox
-                QMessageBox.information(self, "Vision Not Found", "Vision document has not been created yet.")
-
-    @Slot()
-    def _on_approve_vision_clicked(self) -> None:
-        """Handle approve vision button click."""
-        if self.current_project:
-            from PySide6.QtWidgets import QMessageBox
-
-            reply = QMessageBox.question(
-                self,
-                "Approve Vision",
-                "Are you sure you want to approve this vision?\n\n"
-                "This will start the autonomous development process where agents will "
-                "begin working on the game automatically.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-
-            if reply == QMessageBox.StandardButton.Yes:
-                self.logger.info(f"Vision approved for: {self.current_project.get('name')}")
-
-                # Read the vision content
-                project_path = Path(self.current_project.get("path", ""))
-                vision_path = project_path / "design" / "VISION.md"
-
-                if vision_path.exists():
-                    try:
-                        vision_content = vision_path.read_text(encoding="utf-8")
-
-                        # Update UI
-                        self.vision_status_label.setText("✓ Vision approved - Autonomous development active")
-                        self.vision_status_label.setStyleSheet("color: #4CAF50; font-weight: bold;")
-                        self.approve_vision_button.setEnabled(False)
-                        self.create_vision_button.setEnabled(False)
-
-                        # Emit signal with vision data
-                        vision_data = {
-                            "project_name": self.current_project.get("name"),
-                            "project_path": str(project_path),
-                            "vision_content": vision_content,
-                        }
-                        self.vision_approval_requested.emit(vision_data)
-
-                    except Exception as e:
-                        self.logger.error(f"Failed to read vision document: {e}")
-                        QMessageBox.warning(self, "Error", f"Failed to read vision document: {e}")
-                else:
-                    QMessageBox.warning(self, "Error", "Vision document not found. Please create it first.")
-
-    def update_vision_status(self, status: str, vision_created: bool = False) -> None:
-        """Update the vision status display.
-
-        Args:
-            status: Status message to display.
-            vision_created: Whether the vision has been created.
-        """
-        self.vision_status_label.setText(status)
-
-        if vision_created:
-            self.vision_status_label.setStyleSheet("color: #2196F3; font-weight: bold;")
-            self.create_vision_button.setEnabled(False)
-            self.view_vision_button.setEnabled(True)
-            self.approve_vision_button.setEnabled(True)
-        else:
-            self.vision_status_label.setStyleSheet("color: #666; font-style: italic;")
-

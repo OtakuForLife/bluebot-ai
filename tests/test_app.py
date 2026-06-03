@@ -24,6 +24,10 @@ def test_main_handles_missing_pyside6(monkeypatch, capsys) -> None:
     printed instead of raising.
     """
 
+    # Skip tracing startup — this test is not about Phoenix and starting a real
+    # server during pytest causes Windows file-lock errors on teardown.
+    monkeypatch.setattr(app, "setup_tracing", lambda: None)
+
     real_import = builtins.__import__
 
     def fake_import(name, *args, **kwargs):  # type: ignore[override]

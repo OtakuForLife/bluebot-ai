@@ -1,318 +1,389 @@
-"""Base agent class and core agent abstractions.
+"""Base agent class for the agent system.
 
-This module defines the foundational Agent class that all specialized agents
-inherit from, along with the core interfaces for agent lifecycle and communication.
+This module provides the Agent class that handles tasks using LLM and tools.
 """
 
-import asyncio
+import json as _json
 import logging
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
+import re as _re
+from datetime import datetime
+from pathlib import Path
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
-from uuid import UUID, uuid4
+from typing import List, Optional
+from uuid import uuid4
 
-if TYPE_CHECKING:
-    from src.orchestrator.task_manager import TaskManager
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import BaseTool, StructuredTool
+
+from src.agents.config import AgentConfig
+from src.agents.llm import LLMConfig, LangChainAdapter
+from src.agents.llm.factory import ProviderFactory
+from src.agents.llm.tool import AgentTool
+from src.agents.llm.tools import _FINISH_TOOL_NAME, _create_finish_tool
+from src.agents.roles import AgentRole
+from src.agents.state import AgentMessage
+from src.events import Event, EventHandler, EventType
+from src.project.tasks import AgentTask
+
+
+def _parse_text_tool_calls(text: str) -> list[dict]:
+    """Try to extract tool calls from a text response that contains JSON.
+
+    Some local models (e.g. small Ollama models) output tool calls as JSON
+    text instead of using the native function-calling API.  They typically
+    produce a JSON array like:
+
+        [ { "name": "create_file", "arguments": { "path": "...", "content": "..." } } ]
+
+    This parser handles that format and returns a list of dicts compatible
+    with LangChain's tool_calls structure: {"name": str, "args": dict, "id": str}.
+    Returns an empty list if the text does not look like tool calls.
+    """
+    if not text:
+        return []
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    clean = _re.sub(r"```[a-z]*\n?", "", text).strip()
+    # Find the outermost [...] block
+    match = _re.search(r"\[.*\]", clean, _re.DOTALL)
+    if not match:
+        return []
+    try:
+        parsed = _json.loads(match.group(0))
+    except (_json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    calls: list[dict] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("function")
+        # Models use "arguments", "args", or "parameters" interchangeably
+        args = (
+            item.get("arguments")
+            or item.get("args")
+            or item.get("parameters")
+            or {}
+        )
+        if name and isinstance(args, dict):
+            calls.append({"name": name, "args": args, "id": str(uuid4())})
+    return calls
+
 
 
 class AgentStatus(Enum):
     """Enumeration of possible agent states."""
-
     IDLE = "idle"
-    RUNNING = "running"
-    PAUSED = "paused"
+    WORKING = "working"
     STOPPED = "stopped"
     ERROR = "error"
 
 
-class MessageType(Enum):
-    """Types of messages that can be exchanged between agents."""
-
-    TASK_REQUEST = "task_request"
-    TASK_RESPONSE = "task_response"
-    STATUS_UPDATE = "status_update"
-    ERROR_REPORT = "error_report"
-    FILE_MODIFIED = "file_modified"
-    TEST_RESULT = "test_result"
-    AGENT_READY = "agent_ready"
-    AGENT_SHUTDOWN = "agent_shutdown"
-    PROJECT_CREATED = "project_created"
-    VISION_CREATED = "vision_created"
-    VISION_APPROVED = "vision_approved"
-    VISION_REJECTED = "vision_rejected"
-    # Autonomous task management message types
-    TASK_CREATED = "task_created"
-    TASK_CLAIMED = "task_claimed"
-    TASK_COMPLETED = "task_completed"
-    TASK_STATE_CHANGED = "task_state_changed"
-    TASK_QUERY = "task_query"
-    TASK_QUERY_RESPONSE = "task_query_response"
-
-
 @dataclass
-class Message:
-    """A message exchanged between agents or between agent and orchestrator.
+class _ReActResult:
+    """Return value of Agent._react_loop — bundles everything the loop produces."""
+    messages: list
+    tool_results: list[str]
+    errors: list[str]
+    state_updates: dict  # merged back into AgentMessage by Agent.run()
 
-    Attributes:
-        id: Unique identifier for this message.
-        type: The type of message being sent.
-        sender_id: UUID of the agent sending the message.
-        recipient_id: UUID of the intended recipient (None for broadcast).
-        payload: The actual message data (structure depends on message type).
-        timestamp: When the message was created (set automatically).
+
+def to_langchain_tool(agent_tool: AgentTool) -> BaseTool:
+    """Helper method to convert custom AgentTool class to Langchain's BaseTool class"""
+    return StructuredTool.from_function(
+        func=agent_tool.execute,
+        name=agent_tool.name,
+        description=agent_tool.description,
+    )
+
+
+class Agent:
+    """Agent class that handles tasks using LLM and tools.
+
+    This class provides foundational interface and lifecycle management
+    for all agents in the system. It can be used directly with
+    different AgentRole values.
     """
 
-    id: UUID
-    type: MessageType
-    sender_id: UUID
-    recipient_id: Optional[UUID]
-    payload: dict[str, Any]
-
-    def __post_init__(self) -> None:
-        """Validate message after initialization."""
-        if not isinstance(self.type, MessageType):
-            raise ValueError(f"Invalid message type: {self.type}")
-
-
-class Agent(ABC):
-    """Abstract base class for all agents in the system.
-
-    Each agent runs asynchronously and communicates via messages through
-    a shared message bus. Agents have a specific role and can process
-    tasks independently.
-
-    Attributes:
-        id: Unique identifier for this agent instance.
-        name: Human-readable name for this agent.
-        role: The agent's specialized role (e.g., "developer", "tester").
-        status: Current operational status of the agent.
-    """
-
-    def __init__(self, name: str, role: str) -> None:
-        """Initialize a new agent.
-
-        Args:
-            name: Human-readable name for this agent.
-            role: The agent's specialized role.
-        """
-        self.id: UUID = uuid4()
-        self.name: str = name
-        self.role: str = role
-        self.status: AgentStatus = AgentStatus.IDLE
-        self.logger: logging.Logger = logging.getLogger(
-            f"agent.{role}.{self.id.hex[:8]}"
-        )
-        self._running: bool = False
-        self._task_queue: asyncio.Queue[Message] = asyncio.Queue()
-        self.task_manager: Optional[TaskManager] = None  # Will be set by orchestrator
-        self.autonomous_mode: bool = False  # Enable/disable autonomous behavior
-
-    async def start(self) -> None:
-        """Start the agent's main processing loop.
-
-        This method should be called to begin agent operation. It will
-        run until stop() is called or an unrecoverable error occurs.
-        """
-        if self._running:
-            self.logger.warning(f"Agent {self.name} is already running")
-            return
-
-        self._running = True
-        self.status = AgentStatus.RUNNING
-        self.logger.info(f"Agent {self.name} ({self.role}) starting")
-
-        try:
-            await self._run()
-        except Exception as e:
-            self.logger.error(f"Agent {self.name} encountered error: {e}", exc_info=True)
-            self.status = AgentStatus.ERROR
-            raise
-        finally:
-            self._running = False
-
-    async def stop(self) -> None:
-        """Stop the agent gracefully.
-
-        Signals the agent to stop processing and clean up resources.
-        """
-        self.logger.info(f"Agent {self.name} stopping")
-        self._running = False
-        self.status = AgentStatus.STOPPED
-
-    async def send_message(self, message: Message) -> None:
-        """Send a message to another agent or the orchestrator.
-
-        This method should be overridden by subclasses to integrate with
-        the actual message bus.
-
-        Args:
-            message: The message to send.
-        """
-        # Default implementation logs the message
-        # Subclasses will override to use the actual message bus
-        self.logger.debug(f"Sending message: {message.type.value} to {message.recipient_id}")
-
-    async def receive_message(self, message: Message) -> None:
-        """Receive a message from another agent or the orchestrator.
-
-        Args:
-            message: The received message.
-        """
-        await self._task_queue.put(message)
-
-    @abstractmethod
-    async def process_message(self, message: Message) -> None:
-        """Process a received message.
-
-        This method must be implemented by concrete agent classes to define
-        how they handle different message types.
-
-        Args:
-            message: The message to process.
-        """
-        pass
-
-    async def _run(self) -> None:
-        """Internal main loop for the agent.
-
-        Continuously processes messages from the task queue while running.
-        Also calls autonomous tick when in autonomous mode.
-        """
-        autonomous_tick_interval = 5.0  # seconds between autonomous ticks
-        last_autonomous_tick = 0.0
-
-        while self._running:
-            try:
-                # Wait for a message with a timeout to allow checking _running flag
-                message = await asyncio.wait_for(self._task_queue.get(), timeout=0.5)
-                await self.process_message(message)
-            except asyncio.TimeoutError:
-                # No message received, check if we should do autonomous tick
-                if self.autonomous_mode:
-                    import time
-                    current_time = time.time()
-                    if current_time - last_autonomous_tick >= autonomous_tick_interval:
-                        try:
-                            await self.on_autonomous_tick()
-                            last_autonomous_tick = current_time
-                        except Exception as e:
-                            self.logger.error(f"Error in autonomous tick: {e}", exc_info=True)
-                continue
-            except Exception as e:
-                self.logger.error(f"Error processing message: {e}", exc_info=True)
-                self.status = AgentStatus.ERROR
-
-    # Task management methods for autonomous behavior
-
-    async def discover_tasks(self, task_type: Optional[str] = None) -> list[dict]:
-        """Discover available tasks that this agent can handle.
-
-        Args:
-            task_type: Optional filter by specific task type.
-
-        Returns:
-            List of available task data dictionaries.
-        """
-        if not self.task_manager:
-            self.logger.warning("Task manager not available")
-            return []
-
-        return await self.task_manager.get_available_tasks(
-            agent_role=self.name,
-            task_type=task_type
-        )
-
-    async def claim_task(self, task_id: str) -> bool:
-        """Claim a task for this agent to work on.
-
-        Args:
-            task_id: ID of the task to claim.
-
-        Returns:
-            True if task was successfully claimed, False otherwise.
-        """
-        if not self.task_manager:
-            self.logger.warning("Task manager not available")
-            return False
-
-        success = await self.task_manager.claim_task(task_id, self.id)
-
-        if success:
-            self.logger.info(f"Successfully claimed task: {task_id}")
-
-        return success
-
-    async def complete_task(self, task_id: str, result: Optional[dict] = None) -> bool:
-        """Mark a task as completed.
-
-        Args:
-            task_id: ID of the task to complete.
-            result: Optional result data from task completion.
-
-        Returns:
-            True if task was successfully completed, False otherwise.
-        """
-        if not self.task_manager:
-            self.logger.warning("Task manager not available")
-            return False
-
-        success = await self.task_manager.complete_task(task_id, self.id, result)
-
-        if success:
-            self.logger.info(f"Successfully completed task: {task_id}")
-
-        return success
-
-    async def create_task(
+    def __init__(
         self,
-        title: str,
-        description: str,
-        agent: str,
-        task_type: str,
-        requires_review: bool = True,
-        metadata: Optional[dict] = None,
-    ) -> Optional[dict]:
-        """Create a new task.
+        name: str,
+        role: AgentRole,
+        config: Optional[AgentConfig] = None,
+    ) -> None:
+        """Initialize the agent.
 
         Args:
-            title: Task title.
-            description: Task description.
-            agent: Agent name to assign the task to.
-            task_type: Type of task.
-            requires_review: Whether task requires user review.
-            metadata: Optional additional metadata.
-
-        Returns:
-            The created task data or None if creation failed.
+            name: Name of the agent.
+            role: Role of the agent.
+            config: Agent configuration (event_handler, llm_config, etc.).
         """
-        if not self.task_manager:
-            self.logger.warning("Task manager not available")
-            return None
+        config = config or AgentConfig()
+        self.id = uuid4()
+        self.name = name
+        self.system_prompt = config.system_prompt
+        self.role = role
+        self._status = AgentStatus.STOPPED
+        self._current_task: Optional[AgentTask] = None
+        self.event_handler = config.event_handler
 
-        task = await self.task_manager.create_task(
-            title=title,
-            description=description,
-            agent=agent,
-            task_type=task_type,
-            requires_review=requires_review,
-            created_by=self.id,
-            metadata=metadata,
+        self.capabilities: List[str] = config.capabilities
+        # finish tool is always available — it is the agent's only exit signal.
+        self.tools = list(config.tools) + [_create_finish_tool()]
+        lc_tools = [to_langchain_tool(t) for t in self.tools]
+        self.tool_lookup = {t.name: t for t in self.tools}
+
+        self.logger = logging.getLogger(f"agent.{name}")
+
+        # Create LLM provider using ProviderFactory
+        self.llm_config = config.llm_config or LLMConfig()
+        self.llm_provider = ProviderFactory.create(self.llm_config)
+        self.langchain_model = LangChainAdapter(provider=self.llm_provider).bind_tools(
+            lc_tools, agent_tools=self.tools
         )
 
-        self.logger.info(f"Created task: {task['id']} - {title}")
+        # Load knowledge base
+        self.knowledge_dir = Path(config.knowledge_path) if config.knowledge_path else None
+        if self.knowledge_dir:
+            from src.agents.knowledge import KnowledgeBase
+            self.knowledge_base = KnowledgeBase(str(self.knowledge_dir))
+        else:
+            self.knowledge_base = None
 
-        return task
+    def set_provider(self, provider: "BaseLLMProvider") -> None:  # type: ignore[name-defined]
+        """Swap the LLM provider at runtime.
 
-    async def on_autonomous_tick(self) -> None:
-        """Called periodically when in autonomous mode.
+        Recreates the LangChain model binding so the new provider takes effect
+        on the very next run() call.
 
-        Agents can override this to implement autonomous behavior like:
-        - Discovering and claiming tasks
-        - Creating new tasks based on analysis
-        - Monitoring project state
-
-        This is called from the agent's main loop when autonomous_mode is True.
+        Args:
+            provider: The new LLM provider to use.
         """
-        pass  # Default implementation does nothing
+        from src.agents.llm import LangChainAdapter
+        lc_tools = [to_langchain_tool(t) for t in self.tools]
+        self.llm_provider = provider
+        self.langchain_model = LangChainAdapter(provider=provider).bind_tools(
+            lc_tools, agent_tools=self.tools
+        )
+        self.logger.info(
+            f"Provider updated to {provider.__class__.__name__} "
+            f"(model={getattr(provider.config, 'model', '?')})"
+        )
 
+    @property
+    def status(self) -> AgentStatus:
+        """Get the current status of the agent."""
+        return self._status
+
+    @property
+    def current_task(self) -> Optional[AgentTask]:
+        """Get the task the agent is currently working on."""
+        return self._current_task
+
+    def set_current_task(self, task: Optional[AgentTask]) -> None:
+        """Set the task the agent is currently working on and emit event.
+
+        Args:
+            task: The task being worked on, or None if no task.
+        """
+        self._current_task = task
+        if self.event_handler:
+            self.event_handler.emit_event(Event(
+                type=EventType.AGENT_CURRENT_TASK_CHANGED,
+                payload={
+                    "agent_id": str(self.id),
+                    "agent_name": self.name,
+                    "task": task if task else None,
+                },
+                timestamp=datetime.now().isoformat()
+            ))
+
+    @status.setter
+    def status(self, value: AgentStatus) -> None:
+        """Set the agent status and emit event."""
+        old_status = self._status
+        self._status = value
+        self.logger.info(f"Status changed from {old_status.value} to {value.value}")
+
+        # Emit status changed event if event handler is available
+        if self.event_handler:
+            self.event_handler.emit_event(Event(
+                type=EventType.AGENT_STATUS_CHANGED,
+                payload={
+                    "agent_id": str(self.id),
+                    "agent_name": self.name,
+                    "agent_role": self.role.value,
+                    "old_status": old_status.value,
+                    "new_status": value.value,
+                },
+                timestamp=datetime.now().isoformat()
+            ))
+    
+    # ── Public entry point ────────────────────────────────────────────────────
+
+    async def run(self, state: AgentMessage) -> AgentMessage:
+        """LangGraph node entry point — runs one complete agent turn.
+
+        Sequence:
+          1. Emit kanban 'in_progress' event (specialists only).
+          2. Build the initial LLM prompt from state.
+          3. Run the ReAct loop (LLM → tools → LLM …).
+          4. Emit kanban 'review' event (specialists only).
+          5. Return the updated state.
+        """
+        workspace_root: str = state.get("workspace_root", ".")
+        task_preview = state.get("task_description", "")[:120].replace("\n", " ")
+        self.logger.info(f"Invoked — task: {task_preview}")
+
+        self._emit_task_started(state)
+        prompt = self._build_prompt(state)
+        result = await self._react_loop(prompt, workspace_root)
+        self._emit_task_finished(state)
+
+        agent_state: AgentMessage = {
+            **state,
+            **result.state_updates,
+            "messages": result.messages,
+            "tool_results": list(state.get("tool_results", [])) + result.tool_results,
+            "last_agent": self.name,
+            "errors": list(state.get("errors", [])) + result.errors,
+        }
+        return agent_state
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    def _emit_task_started(self, state: AgentMessage) -> None:
+        """Notify the kanban board that a specialist has started working.
+
+        Only specialist agents (those with capabilities) emit this event.
+        Director-type agents (Project Director, Discovery) do not claim tasks
+        from the marketplace, so they never emit kanban progress events.
+        """
+        if self.capabilities and state.get("current_task_id"):
+            if self.event_handler:
+                self.event_handler.emit_event(Event(
+                    type=EventType.TASK_ASSIGNED,
+                    payload={
+                        "task_id": state["current_task_id"],
+                        "agent_name": self.name,
+                        "new_state": "in_progress",
+                    },
+                    timestamp=datetime.now().isoformat(),
+                ))
+
+    def _emit_task_finished(self, state: AgentMessage) -> None:
+        """Notify the kanban board that a specialist finished and needs review."""
+        if self.capabilities and state.get("current_task_id"):
+            if self.event_handler:
+                self.event_handler.emit_event(Event(
+                    type=EventType.TASK_UPDATED,
+                    payload={
+                        "task_id": state["current_task_id"],
+                        "new_state": "review",
+                    },
+                    timestamp=datetime.now().isoformat(),
+                ))
+
+    def _build_prompt(self, state: AgentMessage) -> list:
+        """Build the initial LLM prompt messages from the current workflow state."""
+        context_parts: list[str] = [
+            f"Workspace: {state.get('workspace_root', '.')}",
+            f"Task:\n{state['task_description']}",
+        ]
+        # Strategic directive written by the Project Director for the Discovery Agent.
+        if state.get("direction"):
+            context_parts.append(f"Strategic Direction:\n{state['direction']}")
+        if state.get("acceptance_criteria"):
+            criteria = "\n".join(f"- {c}" for c in state["acceptance_criteria"])
+            context_parts.append(f"Acceptance Criteria:\n{criteria}")
+        if state.get("human_review_approved") is not None:
+            verdict = "APPROVED" if state["human_review_approved"] else "REJECTED"
+            context_parts.append(f"Human Review: {verdict}")
+            if state.get("human_review_comment"):
+                context_parts.append(f"Review Comment: {state['human_review_comment']}")
+        return [
+            SystemMessage(content=self.system_prompt),
+            HumanMessage(content="\n\n".join(context_parts)),
+        ]
+
+    async def _react_loop(self, prompt: list, workspace_root: str) -> _ReActResult:
+        """Run the Reason + Act loop until the agent calls finish().
+
+        Each iteration:
+          1. Call the LLM with the accumulated message history.
+          2. Execute every tool the LLM requested.
+          3. Append tool results to messages and loop.
+
+        The loop exits only when the agent calls the finish() tool.
+        The agent is responsible for deciding when its work is done.
+        """
+        messages: list = []
+        tool_results: list[str] = []
+        errors: list[str] = []
+        current_prompt = prompt
+        iteration = 0
+        finished = False
+
+        while not finished:
+            iteration += 1
+            self.logger.info(f"Calling LLM (iteration {iteration})...")
+            response: AIMessage = await self.langchain_model.ainvoke(current_prompt)
+            messages.append(response)
+            self.logger.info(f"LLM responded — {len(response.tool_calls)} tool call(s)")
+
+            # Prefer native tool_calls; fall back to JSON embedded in text.
+            # If the model produces plain text, log it and feed it back so it
+            # can self-correct on the next iteration.
+            tool_calls = list(response.tool_calls)
+            if not tool_calls:
+                text = getattr(response, "content", "")
+                tool_calls = _parse_text_tool_calls(text)
+                if tool_calls:
+                    self.logger.info(f"Parsed {len(tool_calls)} text-format tool call(s)")
+                elif text:
+                    self.logger.warning(
+                        f"LLM produced text instead of a tool call: {str(text)[:300]}"
+                    )
+
+            for call in tool_calls:
+                tool_name = call["name"]
+                args = {**call["args"], "project_root": workspace_root}
+                tool = self.tool_lookup.get(tool_name)
+
+                if tool is None:
+                    self.logger.warning(f"Unknown tool: {tool_name}")
+                    errors.append(f"Unknown tool: {tool_name}")
+                    messages.append(ToolMessage(tool_call_id=call["id"],
+                                                content=f"Error: unknown tool '{tool_name}'"))
+                    continue
+
+                self.logger.info(
+                    f"Tool → {tool_name}("
+                    f"{', '.join(f'{k}={v!r}' for k, v in args.items() if k != 'project_root')})"
+                )
+                try:
+                    result = tool.execute(args)
+                    self.logger.info(f"Tool ← {tool_name}: {str(result)[:200]}")
+                    tool_results.append(f"{tool_name}: {result}")
+                    messages.append(ToolMessage(tool_call_id=call["id"], content=str(result)))
+                    if tool_name == _FINISH_TOOL_NAME:
+                        finished = True
+                except Exception as exc:
+                    self.logger.error(f"Tool {tool_name} failed: {exc}")
+                    errors.append(f"Tool {tool_name} failed: {exc}")
+                    messages.append(ToolMessage(tool_call_id=call["id"], content=f"Error: {exc}"))
+
+            current_prompt = messages  # always feed accumulated context back
+
+        # Collect any state updates that tools want to push back into AgentMessage
+        state_updates: dict = {}
+        for tool in self.tools:
+            state_updates.update(tool.consume_state_update())
+
+        return _ReActResult(
+            messages=messages,
+            tool_results=tool_results,
+            errors=errors,
+            state_updates=state_updates,
+        )

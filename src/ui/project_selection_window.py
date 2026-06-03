@@ -1,6 +1,5 @@
 """Project selection window for choosing or creating a project."""
 
-import json
 import logging
 from pathlib import Path
 from typing import Optional
@@ -12,13 +11,17 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from src.commands import CreateProjectCommand
+from src.project.files import NewProjectData
+from src.project.storage import load_projects_file, save_projects_file
+from src.ui.bridge import QtCommandBridge
 from src.ui.project_dialog import NewProjectDialog
-from src.utils.project_structure import create_project_structure
 
 
 class ProjectSelectionWindow(QDialog):
@@ -31,9 +34,10 @@ class ProjectSelectionWindow(QDialog):
         project_selected: Emitted when a project is selected and confirmed.
     """
     
-    project_selected = Signal(dict)
+    on_project_selected = Signal(object)
+    create_project_requested = Signal(object)
     
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, qt_command_bridge: QtCommandBridge, parent: Optional[QWidget] = None) -> None:
         """Initialize the project selection window.
         
         Args:
@@ -45,6 +49,8 @@ class ProjectSelectionWindow(QDialog):
         self.projects: list[dict] = []
         self.projects_file = Path("projects.json")
         self.selected_project: Optional[dict] = None
+
+        self.create_project_requested.connect(qt_command_bridge.dispatch)
         
         self._setup_ui()
         self._load_projects()
@@ -74,19 +80,25 @@ class ProjectSelectionWindow(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
-        
+
         new_project_button = QPushButton("+ New Project")
         new_project_button.clicked.connect(self._on_new_project)
         button_layout.addWidget(new_project_button)
-        
+
         button_layout.addStretch()
-        
+
+        self.delete_button = QPushButton("Delete Project")
+        self.delete_button.setEnabled(False)
+        self.delete_button.setStyleSheet("background-color: #f44336; color: white; padding: 8px 16px;")
+        self.delete_button.clicked.connect(self._on_delete_project)
+        button_layout.addWidget(self.delete_button)
+
         self.open_button = QPushButton("Open Project")
         self.open_button.setEnabled(False)
         self.open_button.setStyleSheet("background-color: #4CAF50; color: white; padding: 8px 16px;")
         self.open_button.clicked.connect(self._on_open_project)
         button_layout.addWidget(self.open_button)
-        
+
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(cancel_button)
@@ -95,20 +107,8 @@ class ProjectSelectionWindow(QDialog):
     
     def _load_projects(self) -> None:
         """Load projects from JSON file."""
-        if self.projects_file.exists():
-            try:
-                with open(self.projects_file, 'r', encoding='utf-8') as f:
-                    self.projects = json.load(f)
-                
-                self.logger.info(f"Loaded {len(self.projects)} projects")
-                self._refresh_project_list()
-                
-            except Exception as e:
-                self.logger.error(f"Failed to load projects: {e}")
-                self.projects = []
-        else:
-            self.logger.info("No projects file found, starting with empty list")
-            self.projects = []
+        self.projects = load_projects_file(self.projects_file, self.logger)
+        self._refresh_project_list()
     
     def _refresh_project_list(self) -> None:
         """Refresh the project list display."""
@@ -121,14 +121,7 @@ class ProjectSelectionWindow(QDialog):
     
     def _save_projects(self) -> None:
         """Save projects to JSON file."""
-        try:
-            with open(self.projects_file, 'w', encoding='utf-8') as f:
-                json.dump(self.projects, f, indent=2, ensure_ascii=False)
-
-            self.logger.info(f"Saved {len(self.projects)} projects")
-
-        except Exception as e:
-            self.logger.error(f"Failed to save projects: {e}")
+        save_projects_file(self.projects, self.projects_file, self.logger)
 
     @Slot()
     def _on_new_project(self) -> None:
@@ -137,36 +130,29 @@ class ProjectSelectionWindow(QDialog):
         project_data = dialog.get_project_data()
 
         if project_data:
-            # Create project directory structure
-            self._create_project_structure(project_data)
+            # Create project directory structure via command
+            self.create_project_requested.emit(CreateProjectCommand(payload=project_data))
 
-            # Add to projects list
-            self.projects.append(project_data)
+            # Add project to list and save
+            # Convert to dict format expected by projects.json
+            project_dict = {
+                "name": project_data.get("name", "Unnamed Project"),
+                "description": project_data.get("description", ""),
+                "brief": project_data.get("brief", ""),
+                "path": project_data.get("path", ""),
+                "genres": project_data.get("genres", []),
+                "elements": project_data.get("elements", []),
+            }
+            self.projects.append(project_dict)
             self._save_projects()
             self._refresh_project_list()
 
             # Select the newly created project
-            for i in range(self.project_list.count()):
-                item = self.project_list.item(i)
-                if item.data(Qt.ItemDataRole.UserRole) == project_data:
-                    self.project_list.setCurrentItem(item)
-                    break
+            self.selected_project = project_dict
+            self.logger.info(f"Created new project: {project_data.get('name')}")
 
-            self.logger.info(f"Created new project: {project_data['name']}")
+            self.accept()
 
-    def _create_project_structure(self, project_data: dict) -> None:
-        """Create the project directory structure.
-
-        Args:
-            project_data: Project data dictionary.
-        """
-        # Use centralized utility for project structure creation
-        success = create_project_structure(project_data)
-
-        if success:
-            self.logger.info(f"Created project structure for: {project_data['name']}")
-        else:
-            self.logger.error(f"Failed to create project structure for: {project_data['name']}")
 
     @Slot(QListWidgetItem, QListWidgetItem)
     def _on_selection_changed(self, current: QListWidgetItem, previous: QListWidgetItem) -> None:
@@ -179,9 +165,11 @@ class ProjectSelectionWindow(QDialog):
         if current:
             self.selected_project = current.data(Qt.ItemDataRole.UserRole)
             self.open_button.setEnabled(True)
+            self.delete_button.setEnabled(True)
         else:
             self.selected_project = None
             self.open_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
 
     @Slot(QListWidgetItem)
     def _on_project_double_clicked(self, item: QListWidgetItem) -> None:
@@ -199,6 +187,37 @@ class ProjectSelectionWindow(QDialog):
         if self.selected_project:
             self.accept()
 
+    @Slot()
+    def _on_delete_project(self) -> None:
+        """Handle delete project button click."""
+        if not self.selected_project:
+            return
+
+        project_name = self.selected_project.get("name", "Unnamed Project")
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Delete Project",
+            f"Are you sure you want to delete '{project_name}' from the project list?\n\n"
+            "Note: This only removes the project from the list. The project directory and files will not be deleted.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            # Remove project from list
+            self.projects.remove(self.selected_project)
+            self._save_projects()
+            self._refresh_project_list()
+
+            # Clear selection
+            self.selected_project = None
+            self.open_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
+
+            self.logger.info(f"Deleted project from list: {project_name}")
+
     def get_selected_project(self) -> Optional[dict]:
         """Get the selected project data.
 
@@ -206,4 +225,3 @@ class ProjectSelectionWindow(QDialog):
             Selected project data dictionary, or None if no project selected.
         """
         return self.selected_project
-

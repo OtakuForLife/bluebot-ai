@@ -1,6 +1,7 @@
 """File explorer panel with integrated text editor."""
 
 import logging
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -19,6 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.ui.bridge import QtEventBridge
+
 
 class FileExplorerPanel(QWidget):
     """Panel for browsing and editing project files.
@@ -34,7 +37,7 @@ class FileExplorerPanel(QWidget):
     file_opened = Signal(str)
     file_saved = Signal(str)
     
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, qt_event_bridge: QtEventBridge, parent: Optional[QWidget] = None) -> None:
         """Initialize the file explorer panel.
         
         Args:
@@ -43,6 +46,7 @@ class FileExplorerPanel(QWidget):
         super().__init__(parent)
         
         self.logger = logging.getLogger(f"{__name__}.FileExplorerPanel")
+        self.qt_event_bridge = qt_event_bridge
         self.current_file: Optional[Path] = None
         self.project_path: Optional[Path] = None
         self.is_modified = False
@@ -247,8 +251,18 @@ class FileExplorerPanel(QWidget):
             # Get content from editor
             content = self.text_editor.toPlainText()
 
-            # Write to file
-            self.current_file.write_text(content, encoding="utf-8")
+            # Write to temp file first, then atomic rename for safety
+            with tempfile.NamedTemporaryFile(
+                mode='w',
+                suffix=self.current_file.suffix,
+                prefix=self.current_file.stem + '.tmp_',
+                dir=self.current_file.parent,
+                encoding="utf-8",
+                delete=False
+            ) as tmp:
+                tmp_path = Path(tmp.name)
+                tmp.write(content)
+            tmp_path.replace(self.current_file)
 
             # Update state
             self.is_modified = False

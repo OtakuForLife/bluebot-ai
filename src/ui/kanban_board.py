@@ -1,11 +1,13 @@
 """Kanban board for task management."""
 
+import json
 import logging
 import uuid
+from pathlib import Path
 from typing import Optional
 from uuid import UUID
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import QEvent, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -25,38 +27,43 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.agents.base import Message, MessageType
-from src.orchestrator.orchestrator import Orchestrator
-
-
 class TaskCard(QFrame):
     """Individual task card widget."""
-    
+
+    clicked = Signal(str)  # emits task_id when the card is clicked
+
     def __init__(self, task_data: dict, parent: Optional[QWidget] = None) -> None:
         """Initialize the task card.
-        
+
         Args:
             task_data: Task data dictionary.
             parent: Parent widget.
         """
         super().__init__(parent)
-        
+
+        self._logger = logging.getLogger(__name__)
         self.task_data = task_data
         self._setup_ui()
-    
+
+        # Install this card as an event filter on every child widget so that
+        # mouse clicks anywhere on the card surface (including on labels) are
+        # caught here instead of being consumed by the child.
+        for child in self.findChildren(QWidget):
+            child.installEventFilter(self)
+
     def _setup_ui(self) -> None:
         """Set up the UI layout."""
         self.setFrameStyle(QFrame.Shape.Box | QFrame.Shadow.Raised)
         self.setLineWidth(1)
-        
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
-        
+
         # Task title
         title = QLabel(f"<b>{self.task_data.get('title', 'Untitled Task')}</b>")
         title.setWordWrap(True)
         layout.addWidget(title)
-        
+
         # Task description
         description = self.task_data.get('description', '')
         if description:
@@ -64,32 +71,46 @@ class TaskCard(QFrame):
             desc_label.setWordWrap(True)
             desc_label.setStyleSheet("color: #666; font-size: 10px;")
             layout.addWidget(desc_label)
-        
+
         # Agent assignment
         agent = self.task_data.get('agent', 'Unassigned')
         agent_label = QLabel(f"👤 {agent}")
         agent_label.setStyleSheet("color: #2196F3; font-size: 10px;")
         layout.addWidget(agent_label)
-        
-        # Review required indicator
-        if self.task_data.get('requires_review', False):
-            review_label = QLabel("⚠️ Requires Review")
-            review_label.setStyleSheet("color: #FF9800; font-size: 10px; font-weight: bold;")
+
+        # Review pending indicator — shown for tasks in the review column
+        if self.task_data.get('state') == 'review':
+            review_label = QLabel("🔔 Click to review")
+            review_label.setStyleSheet(
+                "color: #FF9800; font-size: 10px; font-weight: bold;"
+            )
             layout.addWidget(review_label)
-    
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def eventFilter(self, watched, event) -> bool:  # type: ignore[override]
+        """Intercept mouse presses on child widgets and re-emit as card click."""
+        if event.type() == QEvent.Type.MouseButtonPress:
+            self._logger.debug(f"TaskCard clicked (via child) — task_id={self.get_task_id()}")
+            self.clicked.emit(self.get_task_id())
+            return True  # consume — prevents double-fire with mousePressEvent
+        return super().eventFilter(watched, event)
+
+    def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        """Emit clicked signal for clicks directly on the card frame."""
+        self._logger.debug(f"TaskCard clicked (direct) — task_id={self.get_task_id()}")
+        self.clicked.emit(self.get_task_id())
+        super().mousePressEvent(event)
+
     def get_task_id(self) -> str:
-        """Get the task ID.
-        
-        Returns:
-            Task ID.
-        """
+        """Get the task ID."""
         return self.task_data.get('id', '')
 
 
 class TaskColumn(QWidget):
     """Column for a specific task state."""
-    
-    task_moved = Signal(str, str)  # task_id, new_state
+
+    task_moved = Signal(str, str)   # task_id, new_state
+    task_clicked = Signal(str)      # task_id — bubbled up from TaskCard.clicked
     
     def __init__(self, title: str, state: str, parent: Optional[QWidget] = None) -> None:
         """Initialize the task column.
@@ -144,8 +165,9 @@ class TaskColumn(QWidget):
         """
         self.tasks.append(task_data)
 
-        # Create task card
+        # Create task card and bubble its click signal up to this column
         card = TaskCard(task_data)
+        card.clicked.connect(self.task_clicked)
         self.task_layout.addWidget(card)
 
         # Update count
@@ -172,7 +194,7 @@ class TaskColumn(QWidget):
 class TaskCreationDialog(QDialog):
     """Dialog for creating new tasks."""
 
-    def __init__(self, orchestrator: Orchestrator, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Initialize the task creation dialog.
 
         Args:
@@ -181,7 +203,6 @@ class TaskCreationDialog(QDialog):
         """
         super().__init__(parent)
 
-        self.orchestrator = orchestrator
         self.setWindowTitle("Create New Task")
         self.resize(500, 400)
 
@@ -209,12 +230,10 @@ class TaskCreationDialog(QDialog):
 
         # Agent selection
         self.agent_combo = QComboBox()
-        self._populate_agents()
         form_layout.addRow("Assign to:", self.agent_combo)
 
         # Task type selection
         self.task_type_combo = QComboBox()
-        self.agent_combo.currentTextChanged.connect(self._on_agent_changed)
         form_layout.addRow("Task Type:", self.task_type_combo)
 
         # Requires review checkbox
@@ -231,78 +250,7 @@ class TaskCreationDialog(QDialog):
         button_box.accepted.connect(self.accept)
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
-
-        # Initialize task types for first agent
-        if self.agent_combo.count() > 0:
-            self._on_agent_changed(self.agent_combo.currentText())
-
-    def _populate_agents(self) -> None:
-        """Populate the agent dropdown with registered agents."""
-        agents = self.orchestrator.list_agents()
-
-        for agent_info in agents:
-            agent_name = agent_info.get("name", "Unknown")
-            self.agent_combo.addItem(agent_name)
-
-    @Slot(str)
-    def _on_agent_changed(self, agent_name: str) -> None:
-        """Handle agent selection change.
-
-        Args:
-            agent_name: Selected agent name.
-        """
-        # Update task types based on agent role
-        self.task_type_combo.clear()
-
-        # Get agent info to determine role
-        agents = self.orchestrator.list_agents()
-        agent_info = next((a for a in agents if a.get("name") == agent_name), None)
-
-        if not agent_info:
-            return
-
-        role = agent_info.get("role", "")
-
-        # Add task types based on role
-        if role == "game_programmer":
-            self.task_type_combo.addItems([
-                "create_script",
-                "implement_gameplay",
-                "implement_physics",
-                "implement_ai",
-            ])
-        elif role == "game_designer":
-            self.task_type_combo.addItems([
-                "define_mechanics",
-                "create_storyboard",
-                "design_ux",
-                "create_design_document",
-            ])
-        elif role == "game_artist":
-            self.task_type_combo.addItems([
-                "create_sprite",
-                "create_model",
-                "create_animation",
-                "design_ui",
-            ])
-        elif role == "qa_tester":
-            self.task_type_combo.addItems([
-                "run_tests",
-                "report_bug",
-                "verify_fix",
-            ])
-        elif role == "audio_engineer":
-            self.task_type_combo.addItems([
-                "add_sound_effect",
-                "create_music",
-            ])
-        elif role == "game_producer":
-            self.task_type_combo.addItems([
-                "assign_task",
-                "manage_timeline",
-            ])
-        else:
-            self.task_type_combo.addItem("custom_task")
+    
 
     def get_task_data(self) -> dict:
         """Get the task data from the form.
@@ -324,28 +272,22 @@ class TaskCreationDialog(QDialog):
 class KanbanBoard(QWidget):
     """Kanban board for task management."""
 
-    task_created = Signal(dict)  # task_data
+    task_created = Signal(dict)          # task_data
     task_state_changed = Signal(str, str)  # task_id, new_state
     task_submitted = Signal(str, str, dict)  # agent_name, task_type, payload
+    task_review_requested = Signal(str, dict)  # task_id, review_payload
 
-    def __init__(self, orchestrator: Orchestrator, parent: Optional[QWidget] = None) -> None:
-        """Initialize the Kanban board.
-
-        Args:
-            orchestrator: The orchestrator managing the agents.
-            parent: Parent widget.
-        """
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        """Initialize the Kanban board."""
         super().__init__(parent)
 
         self.logger = logging.getLogger(f"{__name__}.KanbanBoard")
-        self.orchestrator = orchestrator
         self.tasks: dict[str, dict] = {}  # task_id -> task_data
-
-        # Create a special UI subscriber ID for message bus
-        self.ui_subscriber_id = UUID(int=1)  # Special ID for UI components
+        self._project_path: Optional[Path] = None
+        # Payloads waiting for human review, keyed by task_id
+        self._pending_reviews: dict[str, dict] = {}
 
         self._setup_ui()
-        self._subscribe_to_task_events()
 
     def _setup_ui(self) -> None:
         """Set up the UI layout."""
@@ -376,8 +318,9 @@ class KanbanBoard(QWidget):
         self.in_progress_column = TaskColumn("🔄 In Progress", "in_progress")
         columns_layout.addWidget(self.in_progress_column)
 
-        # Review column
+        # Review column — clicking a card in this column triggers human review
         self.review_column = TaskColumn("👀 Review", "review")
+        self.review_column.task_clicked.connect(self._on_review_card_clicked)
         columns_layout.addWidget(self.review_column)
 
         # Done column
@@ -386,70 +329,66 @@ class KanbanBoard(QWidget):
 
         layout.addLayout(columns_layout)
 
-    def _subscribe_to_task_events(self) -> None:
-        """Subscribe to task events from the message bus."""
-        if self.orchestrator and self.orchestrator.message_bus:
-            # Subscribe to task events
-            self.orchestrator.message_bus.subscribe(
-                self.ui_subscriber_id,
-                self._handle_task_event
-            )
-            self.logger.info("Subscribed to task events from message bus")
+    def set_pending_review(self, task_id: str, payload: dict) -> None:
+        """Store a human-review payload for a task awaiting user approval.
 
-    async def _handle_task_event(self, message: Message) -> None:
-        """Handle task events from the message bus.
+        Called by MainWindow when HUMAN_INPUT_REQUESTED arrives. The payload
+        is emitted via task_review_requested when the user clicks the card.
 
         Args:
-            message: The message containing task event data.
+            task_id: ID of the task awaiting review.
+            payload: Full interrupt payload from human_review_node.
         """
-        try:
-            if message.type == MessageType.TASK_CREATED:
-                task_data = message.payload.get("task")
-                if task_data:
-                    task_id = task_data.get("id")
-                    if task_id and task_id not in self.tasks:
-                        # Add new task to board
-                        self.tasks[task_id] = task_data
-                        self.refresh_board()
-                        self.logger.debug(f"Added task from event: {task_id}")
+        self._pending_reviews[task_id] = payload
 
-            elif message.type == MessageType.TASK_STATE_CHANGED:
-                task_data = message.payload.get("task")
-                if task_data:
-                    task_id = task_data.get("id")
-                    if task_id:
-                        # Update task state
-                        self.tasks[task_id] = task_data
-                        self.refresh_board()
-                        self.logger.debug(f"Updated task from event: {task_id}")
+    def clear_pending_review(self, task_id: str) -> None:
+        """Remove a stored review payload once the user has submitted a decision.
 
-            elif message.type == MessageType.TASK_CLAIMED:
-                task_data = message.payload.get("task")
-                if task_data:
-                    task_id = task_data.get("id")
-                    if task_id:
-                        # Update task with claim info
-                        self.tasks[task_id] = task_data
-                        self.refresh_board()
-                        self.logger.debug(f"Task claimed: {task_id}")
+        Args:
+            task_id: ID of the task whose review has been submitted.
+        """
+        self._pending_reviews.pop(task_id, None)
 
-            elif message.type == MessageType.TASK_COMPLETED:
-                task_data = message.payload.get("task")
-                if task_data:
-                    task_id = task_data.get("id")
-                    if task_id:
-                        # Update task to completed state
-                        self.tasks[task_id] = task_data
-                        self.refresh_board()
-                        self.logger.debug(f"Task completed: {task_id}")
+    @Slot(str)
+    def _on_review_card_clicked(self, task_id: str) -> None:
+        """Emit task_review_requested when the user clicks a card in the Review column.
 
-        except Exception as e:
-            self.logger.error(f"Error handling task event: {e}", exc_info=True)
+        If the workflow is currently paused at human_review_node the stored
+        pending-review payload is used (contains thread_id so the orchestrator
+        can be resumed). Otherwise a minimal payload is built from the persisted
+        task data so the user can still approve/reject tasks from a previous run.
+
+        Args:
+            task_id: ID of the clicked task card.
+        """
+        self.logger.debug(
+            f"Review card clicked — task_id={task_id}, "
+            f"pending_ids={list(self._pending_reviews.keys())}"
+        )
+        payload = self._pending_reviews.get(task_id)
+        if payload is None:
+            # No active workflow pause — build payload from stored task data so
+            # the user can still review and move the card to Done / back to Todo.
+            task_data = self.tasks.get(task_id, {})
+            payload = {
+                "task_description": task_data.get("description", ""),
+                "last_agent": task_data.get("agent", ""),
+                "created_files": [],
+                "modified_files": [],
+                "tool_results": [],
+                "current_task_id": task_id,
+                # _thread_id intentionally absent — signals no live workflow
+            }
+            self.logger.info(
+                f"No active workflow for task {task_id}; "
+                "opening review dialog from persisted task data."
+            )
+        self.task_review_requested.emit(task_id, payload)
 
     @Slot()
     def _on_create_task(self) -> None:
         """Handle create task button click."""
-        dialog = TaskCreationDialog(self.orchestrator, self)
+        dialog = TaskCreationDialog(self)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             task_data = dialog.get_task_data()
@@ -478,8 +417,52 @@ class KanbanBoard(QWidget):
             self.logger.info(f"Created task: {task_data.get('title')} for {agent_name}")
             self.task_submitted.emit(agent_name, task_type, payload)
 
+    def set_project_path(self, path: Path) -> None:
+        """Load tasks.json for the given project and populate the board.
+
+        Called whenever a project is opened. Clears any previously loaded
+        tasks and replaces them with the persisted state from disk.
+
+        Args:
+            path: Absolute path to the project root directory.
+        """
+        self._project_path = path
+        self.tasks.clear()
+
+        tasks_file = path / "tasks.json"
+        if tasks_file.exists():
+            try:
+                data = json.loads(tasks_file.read_text(encoding="utf-8"))
+                for task in data.get("tasks", []):
+                    task_id = task.get("id")
+                    if task_id:
+                        self.tasks[task_id] = task
+            except Exception as exc:
+                self.logger.error(f"Failed to load tasks.json: {exc}")
+
+        self.refresh_board()
+        self.logger.info(f"Loaded {len(self.tasks)} task(s) from {path}")
+
+    def _save_tasks(self) -> None:
+        """Persist the current task list to tasks.json in the project folder.
+
+        Uses an atomic temp-file rename so a crash mid-write never corrupts
+        the file. Silently skips if no project path is set.
+        """
+        if not self._project_path:
+            return
+
+        tasks_file = self._project_path / "tasks.json"
+        try:
+            data = {"tasks": list(self.tasks.values())}
+            tmp = tasks_file.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(tasks_file)
+        except Exception as exc:
+            self.logger.error(f"Failed to save tasks.json: {exc}")
+
     def add_task(self, task_data: dict) -> None:
-        """Add a task to the board.
+        """Add a task to the board and persist the change.
 
         Args:
             task_data: Task data dictionary.
@@ -491,6 +474,7 @@ class KanbanBoard(QWidget):
 
         # Store task
         self.tasks[task_id] = task_data
+        self._save_tasks()
 
         # Add to appropriate column
         state = task_data.get("state", "todo")
@@ -526,16 +510,29 @@ class KanbanBoard(QWidget):
                 self.done_column.add_task(task_data)
 
     def update_task_state(self, task_id: str, new_state: str) -> None:
-        """Update a task's state.
+        """Update a task's state and persist the change.
+
+        Completed tasks (state == "done") are immutable — this method will
+        log a warning and return without making any change.
 
         Args:
             task_id: Task ID.
             new_state: New state for the task.
         """
-        if task_id in self.tasks:
-            self.tasks[task_id]["state"] = new_state
-            self.refresh_board()
-            self.task_state_changed.emit(task_id, new_state)
-            self.logger.info(f"Task {task_id} moved to {new_state}")
+        if task_id not in self.tasks:
+            return
+
+        current_state = self.tasks[task_id].get("state")
+        if current_state == "done":
+            self.logger.warning(
+                f"Task {task_id} is already done and cannot be moved to '{new_state}'"
+            )
+            return
+
+        self.tasks[task_id]["state"] = new_state
+        self.refresh_board()
+        self._save_tasks()
+        self.task_state_changed.emit(task_id, new_state)
+        self.logger.info(f"Task {task_id} moved to {new_state}")
 
 

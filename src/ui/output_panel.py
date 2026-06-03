@@ -41,6 +41,7 @@ class OutputPanel(QWidget):
         
         self._setup_ui()
     
+
     def _setup_ui(self) -> None:
         """Set up the UI layout."""
         layout = QVBoxLayout(self)
