@@ -1,4 +1,6 @@
+import json
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from src.events import Event, EventHandler, EventType
@@ -6,6 +8,28 @@ from src.project.tasks import AgentTask, TaskStatus
 
 _AUTO_PULL = "auto_pull"
 _MANUAL_ASSIGNMENT = "manual_assignment"
+
+
+def parse_persisted_tasks(tasks_file: Path) -> list[dict] | None:
+    """Parse a persisted tasks.json file.
+
+    Returns:
+        The task list when the file exists and is valid, otherwise None.
+    """
+    if not tasks_file.exists():
+        return None
+    try:
+        raw = tasks_file.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    tasks = data.get("tasks", data) if isinstance(data, dict) else data
+    if not isinstance(tasks, list):
+        return None
+    return tasks
 
 
 class ProjectManager:

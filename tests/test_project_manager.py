@@ -1,6 +1,8 @@
 """Tests for ProjectManager class."""
 
+import json
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -8,7 +10,7 @@ import pytest
 from src.agents.base import AgentRole
 from src.commands import CommandBus
 from src.events import EventHandler, EventType, Event
-from src.project.manager import ProjectManager
+from src.project.manager import ProjectManager, parse_persisted_tasks
 from src.project.tasks import TaskStatus
 
 
@@ -271,3 +273,33 @@ class TestTaskMarketplace:
         """set_allocation_mode raises ValueError for unknown modes."""
         with pytest.raises(ValueError, match="Unknown allocation mode"):
             project_manager.set_allocation_mode("invalid_mode")
+
+
+class TestParsePersistedTasks:
+    def test_returns_none_for_missing_file(self, tmp_path: Path) -> None:
+        assert parse_persisted_tasks(tmp_path / "tasks.json") is None
+
+    def test_parses_wrapped_tasks_list(self, tmp_path: Path) -> None:
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text(
+            json.dumps({"tasks": [{"id": "t1", "title": "Task"}]}),
+            encoding="utf-8",
+        )
+        result = parse_persisted_tasks(tasks_file)
+        assert result == [{"id": "t1", "title": "Task"}]
+
+    def test_parses_bare_list(self, tmp_path: Path) -> None:
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text(json.dumps([{"id": "t2"}]), encoding="utf-8")
+        assert parse_persisted_tasks(tasks_file) == [{"id": "t2"}]
+
+    def test_returns_none_for_invalid_json(self, tmp_path: Path) -> None:
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text("{not json", encoding="utf-8")
+        assert parse_persisted_tasks(tasks_file) is None
+
+    def test_returns_none_for_non_list_payload(self, tmp_path: Path) -> None:
+        tasks_file = tmp_path / "tasks.json"
+        tasks_file.write_text(json.dumps({"tasks": "nope"}), encoding="utf-8")
+        assert parse_persisted_tasks(tasks_file) is None
+

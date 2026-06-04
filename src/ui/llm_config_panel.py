@@ -188,8 +188,8 @@ class LLMConfigPanel(QWidget):
         if self.SETTINGS_FILE.exists():
             try:
                 data = json.loads(self.SETTINGS_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass  # overwrite corrupt file
+            except (OSError, json.JSONDecodeError) as exc:
+                self.logger.warning(f"Ignoring corrupt settings.json — will overwrite: {exc}")
 
         data["llm"] = {
             "provider": config.provider,

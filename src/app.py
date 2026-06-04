@@ -21,7 +21,7 @@ from src.commands import CommandBus, CreateProjectCommand, CreateTaskCommand
 from src.commands.execution import CommandExecutor
 from src.events import EventHandler, EventType
 from src.project.files import FileManager
-from src.project.manager import ProjectManager
+from src.project.manager import ProjectManager, parse_persisted_tasks
 from src.ui.logging_handler import LoggingBridge
 from src.ui.bridge import QtCommandBridge, QtEventBridge
 from src.agents.llm.prompt_templates import (
@@ -180,23 +180,17 @@ def _load_persisted_tasks(
     has visibility of tasks created in previous sessions.  Errors are logged
     as warnings; a missing or malformed tasks.json is treated as an empty list.
     """
-    import json
     from pathlib import Path
 
     tasks_file = Path(selected_project.get("path", ".")) / "tasks.json"
-    if not tasks_file.exists():
+    tasks = parse_persisted_tasks(tasks_file)
+    if tasks is None:
+        if tasks_file.exists():
+            logger.warning(f"Could not pre-load tasks from {tasks_file}")
         return
 
-    try:
-        data = json.loads(tasks_file.read_text(encoding="utf-8"))
-        tasks: list[dict] = data.get("tasks", data) if isinstance(data, dict) else data
-        if isinstance(tasks, list):
-            project_manager.load_tasks(tasks)
-            logger.info(f"Pre-loaded {len(tasks)} persisted task(s) from {tasks_file}")
-        else:
-            logger.warning(f"Unexpected tasks.json format in {tasks_file} — skipping pre-load")
-    except Exception as exc:
-        logger.warning(f"Could not pre-load tasks from {tasks_file}: {exc}")
+    project_manager.load_tasks(tasks)
+    logger.info(f"Pre-loaded {len(tasks)} persisted task(s) from {tasks_file}")
 
 
 def _setup_components() -> tuple:

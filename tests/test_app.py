@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import builtins
+import json
+import logging
+from pathlib import Path
+
+import pytest
 
 from src import __version__
 from src import app
+from src.events import EventHandler
+from src.project.manager import ProjectManager
 
 
 def test_version_is_synced() -> None:
@@ -41,4 +48,27 @@ def test_main_handles_missing_pyside6(monkeypatch, capsys) -> None:
 
     captured = capsys.readouterr()
     assert "PySide6 is not installed" in captured.out
+
+
+def test_load_persisted_tasks_loads_valid_file(tmp_path: Path) -> None:
+    pm = ProjectManager(EventHandler())
+    tasks_file = tmp_path / "tasks.json"
+    tasks_file.write_text(
+        json.dumps({"tasks": [{"id": "t1", "title": "Saved task"}]}),
+        encoding="utf-8",
+    )
+    logger = logging.getLogger("test")
+
+    app._load_persisted_tasks(pm, {"path": str(tmp_path)}, logger)
+
+    assert pm.get_tasks()[0]["id"] == "t1"
+
+
+def test_load_persisted_tasks_skips_missing_file(tmp_path: Path) -> None:
+    pm = ProjectManager(EventHandler())
+    logger = logging.getLogger("test")
+
+    app._load_persisted_tasks(pm, {"path": str(tmp_path)}, logger)
+
+    assert pm.get_tasks() == []
 

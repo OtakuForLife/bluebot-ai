@@ -387,7 +387,7 @@ class AgentOrchestrator:
         try:
             await self._run_producer(seed)
         except asyncio.CancelledError:
-            pass
+            self.logger.info("Producer seed run cancelled during startup")
 
         # Block here until signal_stop() sets this event
         await self._stop_event.wait()
@@ -476,7 +476,7 @@ class AgentOrchestrator:
                 await asyncio.wait_for(self._stop_event.wait(), timeout=float(interval))
                 break  # stop was requested during the sleep
             except asyncio.TimeoutError:
-                pass  # normal interval elapsed — continue loop
+                self.logger.debug("Polling interval elapsed — continuing loop")
 
         self.logger.info("Producer polling loop finished")
 
