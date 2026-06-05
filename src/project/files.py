@@ -8,9 +8,9 @@ import json
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
-from src.events import EventHandler
+from src.events import EventHandler, EventType
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,23 @@ class FileManager:
 
     def __init__(self, event_handler: EventHandler) -> None:
         self.event_handler = event_handler
+
+    def _emit_file_event(
+        self,
+        event_type: EventType,
+        relative_path: str,
+        project_path: Path | None = None,
+    ) -> None:
+        from datetime import datetime
+
+        self.event_handler.emit_event({
+            "type": event_type,
+            "payload": {
+                "path": relative_path,
+                "project_path": str(project_path) if project_path else None,
+            },
+            "timestamp": datetime.now().isoformat(),
+        })
 
     def create_project_structure(self, project_data: NewProjectData) -> bool:
         try:
@@ -147,7 +164,7 @@ class FileManager:
         return validation_results
 
     def create_file(self, path: str, content: str, project_root: Optional[str] = None) -> str:
-        """Create a new file with the given content.
+        """Create or overwrite a file with the given content.
 
         Args:
             path: Relative path to the file to create.
@@ -157,22 +174,15 @@ class FileManager:
         Returns:
             Success message or error description.
         """
+        if not project_root:
+            return f"Error creating file {path}: project_root is required"
         try:
-            file_path = Path(project_root) / path if project_root else Path(path)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            # Write to temp file first, then atomic rename for safety
-            with tempfile.NamedTemporaryFile(
-                mode='w',
-                suffix=file_path.suffix,
-                prefix=file_path.stem + '.tmp_',
-                dir=file_path.parent,
-                encoding="utf-8",
-                delete=False
-            ) as tmp:
-                tmp_path = Path(tmp.name)
-                tmp.write(content)
-            tmp_path.replace(file_path)
-            return f"Successfully created file: {path}"
+            project_path = Path(project_root)
+            existed = (project_path / path).exists()
+            if self.write_project_file(project_path, path, content):
+                verb = "updated" if existed else "created"
+                return f"Successfully {verb} file: {path}"
+            return f"Error creating file {path}: write failed"
         except Exception as e:
             return f"Error creating file {path}: {str(e)}"
 
@@ -201,6 +211,7 @@ class FileManager:
         """
         try:
             file_path = project_path / relative_path
+            existed = file_path.exists()
 
             # Create parent directories if they don't exist
             file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +228,13 @@ class FileManager:
                 tmp_path = Path(tmp.name)
                 tmp.write(content)
             tmp_path.replace(file_path)
+
+            event_type = (
+                EventType.PROJECT_FILE_UPDATED
+                if existed
+                else EventType.PROJECT_FILE_CREATED
+            )
+            self._emit_file_event(event_type, relative_path, project_path)
 
             logger.info(f"Wrote file to: {file_path}")
             return True
@@ -274,3 +292,37 @@ class FileManager:
         """
         file_path = project_path / relative_path
         return file_path.exists() and file_path.is_file()
+
+    def list_project_files(self, project_path: Path, directory: str = "") -> list[str]:
+        """List relative file paths under a project directory."""
+        base = project_path / directory
+        if not base.exists():
+            return []
+        return sorted(
+            str(f.relative_to(project_path))
+            for f in base.rglob("*")
+            if f.is_file() and not f.name.startswith(".")
+        )
+
+    def read_json_file(
+        self, project_path: Path, relative_path: str
+    ) -> dict[str, Any] | list[Any] | None:
+        """Read and parse a JSON file from the project directory."""
+        content = self.read_project_file(project_path, relative_path)
+        if content is None:
+            return None
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as exc:
+            logger.warning(f"Invalid JSON in {project_path / relative_path}: {exc}")
+            return None
+
+    def write_json_file(
+        self, project_path: Path, relative_path: str, data: Any
+    ) -> bool:
+        """Atomically write JSON data to a file in the project directory."""
+        return self.write_project_file(
+            project_path,
+            relative_path,
+            json.dumps(data, indent=2, ensure_ascii=False),
+        )

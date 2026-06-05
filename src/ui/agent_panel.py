@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
 )
 
 from src.agents.base import AgentStatus
-from src.agents.llm import BaseLLMProvider, LLMConfig, OllamaProvider
 from src.agents.orchestrator import AgentOrchestrator
 
 

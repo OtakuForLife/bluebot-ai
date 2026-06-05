@@ -88,6 +88,28 @@ class HumanReviewDialog(QDialog):
             payload.get("task_description") or "—",
             multiline=True
         ))
+        artifact = payload.get("recommended_artifact") or ""
+        if artifact:
+            context_layout.addWidget(self._make_field("Target artifact", artifact))
+        rubric = payload.get("rubric") or ""
+        if rubric:
+            context_layout.addWidget(self._make_field("Quality rubric", rubric))
+        criteria = payload.get("acceptance_criteria") or []
+        if criteria:
+            context_layout.addWidget(self._make_field(
+                "Acceptance criteria",
+                "\n".join(f"• {c}" for c in criteria),
+                multiline=True,
+            ))
+        director_comment = payload.get("creative_review_comment") or ""
+        if director_comment:
+            approved = payload.get("creative_review_approved")
+            verdict = "Approved" if approved else "Rejected"
+            context_layout.addWidget(self._make_field(
+                f"Creative Director ({verdict})",
+                director_comment,
+                multiline=True,
+            ))
         context_layout.addWidget(self._make_field(
             "Files created",
             "\n".join(payload.get("created_files", [])) or "none"

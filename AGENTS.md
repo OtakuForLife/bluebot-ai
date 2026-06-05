@@ -37,7 +37,7 @@ uv run pytest
 ### Run a single test
 
 ```bash
-uv run pytest tests/test_orchestrator.py
+uv run pytest tests/test_app.py
 ```
 
 ### Verbose test output

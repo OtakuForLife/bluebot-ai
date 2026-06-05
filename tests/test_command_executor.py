@@ -1,10 +1,7 @@
 """Tests for CommandExecutor class."""
 
-from datetime import datetime
-
 import pytest
 
-from src.agents.roles import AgentRole
 from src.commands import CreateProjectCommand, CreateTaskCommand
 from src.commands.execution import CommandExecutor
 from src.project.files import FileManager
@@ -70,12 +67,9 @@ def test_command_executor_handle_create_task(tmp_path) -> None:
         "id": "task-1",
         "title": "Test Task",
         "description": "A test task",
-        "status": TaskStatus.OPEN,
-        "completed_at":datetime.now(),
-        "created_at":datetime.now(),
-        "created_by":"",
-        "requires_review":True,
-        "type":AgentRole.GAME_DESIGNER
+        "state": TaskStatus.OPEN.value,
+        "task_type": "design",
+        "requires_review": True,
     }
     command = CreateTaskCommand(task_data)
 
@@ -85,7 +79,7 @@ def test_command_executor_handle_create_task(tmp_path) -> None:
     tasks = project_manager.get_tasks()
     assert len(tasks) == 1
     assert tasks[0]["title"] == "Test Task"
-    assert tasks[0]["status"] == TaskStatus.OPEN
+    assert tasks[0]["state"] == TaskStatus.OPEN.value
 
 
 def test_command_executor_handles_multiple_tasks(tmp_path) -> None:
@@ -104,12 +98,9 @@ def test_command_executor_handles_multiple_tasks(tmp_path) -> None:
             "id": f"task-{i}",
             "title": f"Task {i}",
             "description": f"Test task {i}",
-            "status": TaskStatus.OPEN,
-            "completed_at":datetime.now(),
-            "created_at":datetime.now(),
-            "created_by":"",
-            "requires_review":True,
-            "type":AgentRole.GAME_DESIGNER
+            "state": TaskStatus.OPEN.value,
+            "task_type": "design",
+            "requires_review": True,
         }
         command = CreateTaskCommand(task_data)
         executor.handle_create_task(command)

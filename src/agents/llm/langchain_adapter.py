@@ -19,6 +19,15 @@ from src.agents.llm.base_provider import BaseLLMProvider, LLMMessage, LLMProvide
 _tracer = _otel_trace.get_tracer(__name__)
 
 
+def _run_sync(coro: Any) -> Any:
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+
 class LangChainAdapter:
     """Adapter that wraps BaseLLMProvider to work with LangChain.
 
@@ -197,14 +206,7 @@ class LangChainAdapter:
         Returns:
             AIMessage with the generated response.
         """
-        # Run the async version in a new event loop
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(self.ainvoke(messages, **kwargs))
+        return _run_sync(self.ainvoke(messages, **kwargs))
 
     async def ainvoke(self, messages: list[BaseMessage], **kwargs: Any) -> AIMessage:
         """Invoke the model with messages asynchronously.
@@ -305,14 +307,7 @@ class LangChainAdapter:
         Returns:
             ChatResult with the generated response.
         """
-        # Run the async version in a new event loop
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(self.agenerate(messages, **kwargs))
+        return _run_sync(self.agenerate(messages, **kwargs))
 
     async def agenerate(self, messages: list[BaseMessage], **kwargs: Any) -> ChatResult:
         """Generate a response asynchronously.

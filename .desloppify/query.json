@@ -1,184 +1,115 @@
 {
-  "command": "show",
-  "query": "single_use",
-  "status_filter": "open",
-  "total": 2,
-  "summary": {
-    "by_tier": {
-      "T3": 2
-    },
-    "by_detector": {
-      "single_use": 2
-    },
-    "files": 2
-  },
-  "by_file": {
-    "src/agents/config.py": [
-      {
-        "id": "single_use::src/agents/config.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Single-use (23 LOC): only imported by src/app.py",
-        "detail": {
-          "loc": 23,
-          "sole_importer": "src/app.py"
-        }
-      }
-    ],
-    "src/ui/project_selection_window.py": [
-      {
-        "id": "single_use::src/ui/project_selection_window.py",
-        "tier": 3,
-        "confidence": "medium",
-        "summary": "Single-use (227 LOC): only imported by src/app.py",
-        "detail": {
-          "loc": 227,
-          "sole_importer": "src/app.py"
-        }
-      }
-    ]
-  },
-  "total_matching": 2,
-  "noise_budget": 10,
-  "noise_global_budget": 0,
+  "command": "resolve",
+  "patterns": [
+    "orchestrator_monolith"
+  ],
+  "status": "fixed",
+  "resolved": [
+    "review::.::holistic::high_level_elegance::orchestrator_monolith::447ab6d2"
+  ],
+  "count": 1,
+  "next_command": "desloppify next",
+  "overall_score": 62.4,
+  "objective_score": 89.9,
+  "strict_score": 56.3,
+  "verified_strict_score": 89.9,
+  "prev_overall_score": 62.4,
+  "prev_objective_score": 89.9,
+  "prev_strict_score": 56.3,
+  "prev_verified_strict_score": 89.9,
+  "attestation": "I have actually Split orchestrator into human_review.py, graph_registry.py, workflow_runner.py; orchestrator is now a thin coordinator. and I am not gaming the score.",
   "narrative": {
-    "phase": "middle_grind",
-    "headline": "All T1 and T2 items cleared!",
+    "phase": "regression",
+    "headline": "All T1 and T2 items cleared! (4 review work items \u2014 run `desloppify show review --status open`)",
     "dimensions": {
       "lowest_dimensions": [
         {
-          "name": "Error consistency",
+          "name": "Security",
           "strict": 0.0,
-          "issues": 0,
+          "failing": 0,
+          "impact": 0.0
+        },
+        {
+          "name": "API coherence",
+          "strict": 0.0,
+          "failing": 0,
           "impact": 0.0,
           "subjective": true,
           "impact_description": "re-review to improve"
         },
         {
-          "name": "Abstraction fit",
+          "name": "Auth consistency",
           "strict": 0.0,
-          "issues": 0,
-          "impact": 0.0,
-          "subjective": true,
-          "impact_description": "re-review to improve"
-        },
-        {
-          "name": "AI generated debt",
-          "strict": 0.0,
-          "issues": 0,
+          "failing": 0,
           "impact": 0.0,
           "subjective": true,
           "impact_description": "re-review to improve"
         }
       ],
-      "biggest_gap_dimensions": [],
-      "stagnant_dimensions": [
+      "biggest_gap_dimensions": [
         {
-          "name": "Duplication",
-          "strict": 100.0,
-          "stuck_scans": 5
+          "name": "Security",
+          "lenient": 100.0,
+          "strict": 0.0,
+          "gap": 100.0,
+          "wontfix_count": 0
         },
         {
-          "name": "Error consistency",
-          "strict": 0.0,
-          "stuck_scans": 5
+          "name": "Test health",
+          "lenient": 69.3,
+          "strict": 30.5,
+          "gap": 38.8,
+          "wontfix_count": 0
         },
         {
-          "name": "Abstraction fit",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "AI generated debt",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "High elegance",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Mid elegance",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Low elegance",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Cross-module arch",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Convention drift",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Dep health",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Test strategy",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Structure nav",
-          "strict": 0.0,
-          "stuck_scans": 5
-        },
-        {
-          "name": "Design coherence",
-          "strict": 0.0,
-          "stuck_scans": 5
+          "name": "File health",
+          "lenient": 90.2,
+          "strict": 80.5,
+          "gap": 9.7,
+          "wontfix_count": 0
         }
-      ]
+      ],
+      "stagnant_dimensions": []
     },
     "actions": [
       {
         "type": "reorganize",
-        "detector": "single_use",
+        "detector": "orphaned",
         "count": 2,
-        "description": "2 single_use findings \u2014 inline or relocate with `desloppify move`",
-        "command": "desloppify show single_use --status open",
+        "description": "2 orphaned issues \u2014 delete dead files or relocate with `desloppify move`",
+        "command": "desloppify show orphaned --status open",
         "impact": 0.0,
         "dimension": "Code quality",
         "priority": 1,
         "lane": "restructure"
       },
       {
-        "type": "refactor",
-        "detector": "structural",
-        "count": 12,
-        "description": "12 structural findings \u2014 decompose large files \u2014 extract logic into focused modules",
-        "command": "desloppify show structural --status open",
+        "type": "reorganize",
+        "detector": "single_use",
+        "count": 1,
+        "description": "1 single_use issues \u2014 inline or relocate with `desloppify move`",
+        "command": "desloppify show single_use --status open",
         "impact": 0.0,
-        "dimension": "File health",
+        "dimension": "Code quality",
         "priority": 2,
-        "lane": "refactor"
+        "lane": "restructure"
       },
       {
         "type": "refactor",
-        "detector": "dict_keys",
-        "count": 15,
-        "description": "15 dict_keys findings \u2014 fix dict key mismatches \u2014 dead writes are likely dead code, schema drift suggests a typo or missed rename",
-        "command": "desloppify show dict_keys --status open",
+        "detector": "structural",
+        "count": 7,
+        "description": "7 structural work items \u2014 review large files \u2014 split only when responsibilities are clearly separable",
+        "command": "desloppify show structural --status open",
         "impact": 0.0,
-        "dimension": "Code quality",
+        "dimension": "File health",
         "priority": 3,
-        "lane": "refactor"
+        "lane": "refactor_0"
       },
       {
         "type": "refactor",
         "detector": "test_coverage",
-        "count": 9,
-        "description": "9 test_coverage findings \u2014 add tests for untested production modules \u2014 prioritize by import count",
+        "count": 10,
+        "description": "10 test_coverage work items \u2014 review test coverage gaps \u2014 focus on critical modules with many importers first; defer test writing until code quality issues are resolved",
         "command": "desloppify show test_coverage --status open",
         "impact": 0.0,
         "dimension": "Test health",
@@ -187,53 +118,62 @@
       },
       {
         "type": "refactor",
-        "detector": "responsibility_cohesion",
+        "detector": "boilerplate_duplication",
         "count": 3,
-        "description": "3 responsibility_cohesion findings \u2014 split modules with too many responsibilities \u2014 extract focused sub-modules",
-        "command": "desloppify show responsibility_cohesion --status open",
+        "description": "3 boilerplate_duplication work items \u2014 extract shared boilerplate into reusable helpers or base classes",
+        "command": "desloppify show boilerplate_duplication --status open",
         "impact": 0.0,
-        "dimension": "Code quality",
+        "dimension": "Duplication",
         "priority": 5,
-        "lane": "refactor"
+        "lane": "refactor_0"
+      },
+      {
+        "type": "refactor",
+        "detector": "review",
+        "count": 4,
+        "description": "4 review work items need investigation \u2014 run `desloppify show review --status open` to see them",
+        "command": "desloppify show review --status open",
+        "impact": 0.0,
+        "dimension": "Unknown",
+        "priority": 6,
+        "lane": "refactor_1"
       },
       {
         "type": "manual_fix",
         "detector": "smells",
-        "count": 17,
-        "description": "17 smells findings \u2014 inspect with `desloppify next` and fix manually",
+        "count": 19,
+        "description": "19 smells issues \u2014 inspect with `desloppify next` and fix manually",
         "command": "desloppify show smells --status open",
         "impact": 0.0,
         "dimension": "Code quality",
-        "priority": 6,
-        "lane": "refactor"
-      },
-      {
-        "type": "manual_fix",
-        "detector": "private_imports",
-        "count": 6,
-        "description": "6 private_imports findings \u2014 stop importing private symbols across module boundaries",
-        "command": "desloppify show private_imports --status open",
-        "impact": 0.0,
-        "dimension": "Code quality",
         "priority": 7,
-        "lane": "refactor"
+        "lane": "refactor_0"
       },
       {
         "type": "manual_fix",
         "detector": "subjective_review",
-        "count": 35,
-        "description": "35 files need design review \u2014 run design review with dimension templates",
-        "command": "desloppify fix review",
+        "count": 8,
+        "description": "8 assessment requests need review \u2014 run holistic review to refresh subjective scores",
+        "command": "desloppify review --prepare",
         "impact": 0.0,
-        "dimension": "Test health",
+        "dimension": "Unknown",
         "priority": 8,
-        "lane": "refactor"
+        "lane": "refactor_1"
+      },
+      {
+        "type": "debt_review",
+        "detector": null,
+        "description": "6.3 pts of wontfix debt \u2014 review stale decisions",
+        "command": "desloppify show --status wontfix",
+        "gap": 6.3,
+        "priority": 9,
+        "lane": "debt_review"
       }
     ],
     "strategy": {
       "fixer_leverage": {
         "auto_fixable_count": 0,
-        "total_count": 99,
+        "total_count": 70,
         "coverage": 0.0,
         "impact_ratio": 0.0,
         "recommendation": "none"
@@ -241,23 +181,31 @@
       "lanes": {
         "restructure": {
           "actions": [
-            1
+            1,
+            2
           ],
-          "file_count": 2,
+          "file_count": 3,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
         },
-        "refactor": {
+        "refactor_0": {
           "actions": [
-            2,
             3,
             5,
+            7
+          ],
+          "file_count": 14,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "refactor_1": {
+          "actions": [
             6,
-            7,
             8
           ],
-          "file_count": 38,
+          "file_count": 1,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
@@ -266,21 +214,30 @@
           "actions": [
             4
           ],
-          "file_count": 9,
+          "file_count": 10,
+          "total_impact": 0.0,
+          "automation": "manual",
+          "run_first": false
+        },
+        "debt_review": {
+          "actions": [
+            9
+          ],
+          "file_count": 0,
           "total_impact": 0.0,
           "automation": "manual",
           "run_first": false
         }
       },
       "can_parallelize": true,
-      "hint": "3 independent workstreams, safe to parallelize. Rescan after each phase to verify."
+      "hint": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 4 issue(s) \u2014 `desloppify show review --status open`."
     },
     "tools": {
       "fixers": [],
       "move": {
         "available": true,
         "relevant": true,
-        "reason": "2 single-use files",
+        "reason": "2 orphaned files + 1 single-use files",
         "usage": "desloppify move <source> <dest> [--dry-run]"
       },
       "plan": {
@@ -295,18 +252,18 @@
       }
     },
     "debt": {
-      "overall_gap": 0.0,
-      "wontfix_count": 2,
-      "worst_dimension": "Code quality",
-      "worst_gap": 0.5,
-      "trend": "stable"
+      "overall_gap": 6.3,
+      "wontfix_count": 1,
+      "worst_dimension": "Security",
+      "worst_gap": 100.0,
+      "trend": "growing"
     },
     "milestone": "All T1 and T2 items cleared!",
     "primary_action": {
-      "command": "desloppify show single_use --status open",
-      "description": "2 single_use findings \u2014 inline or relocate with `desloppify move`"
+      "command": "desloppify show orphaned --status open",
+      "description": "2 orphaned issues \u2014 delete dead files or relocate with `desloppify move`"
     },
-    "why_now": "3 independent workstreams, safe to parallelize. Rescan after each phase to verify.",
+    "why_now": "4 independent workstreams, safe to parallelize. Rescan after each phase to verify. Review: 4 issue(s) \u2014 `desloppify show review --status open`.",
     "verification_step": {
       "command": "desloppify scan",
       "reason": "revalidate after changes"
@@ -314,27 +271,60 @@
     "risk_flags": [
       {
         "type": "wontfix_gap",
-        "severity": "medium",
-        "message": "Strict/lenient gap is 0.0 pts with 2 wontfix findings"
+        "severity": "high",
+        "message": "Strict/lenient gap is 6.3 pts with 1 wontfix issues"
       }
     ],
     "strict_target": {
-      "target": 95.0,
-      "current": 35.2,
-      "gap": 59.8,
+      "target": 85.0,
+      "current": 56.3,
+      "gap": 28.7,
       "state": "below",
       "warning": null
     },
-    "reminders": [],
+    "reminders": [
+      {
+        "type": "rereview_needed",
+        "message": "Subjective results may be stale after resolve. Re-run `desloppify review --prepare` to refresh, or reset with `desloppify scan --reset-subjective` before a clean rerun.",
+        "command": "desloppify review --prepare",
+        "priority": 1,
+        "severity": "high"
+      },
+      {
+        "type": "rescan_needed",
+        "message": "Rescan to verify \u2014 cascading effects may create new issues.",
+        "command": "desloppify scan",
+        "priority": 1,
+        "severity": "high"
+      },
+      {
+        "type": "review_issues_pending",
+        "message": "4 review work item(s) need investigation. Run `desloppify show review --status open` to see the work queue.",
+        "command": "desloppify show review --status open",
+        "priority": 1,
+        "severity": "high"
+      },
+      {
+        "type": "wontfix_growing",
+        "message": "Wontfix debt is growing. Review stale decisions: `desloppify show --status wontfix`.",
+        "command": "desloppify show --status wontfix",
+        "priority": 2,
+        "severity": "medium"
+      }
+    ],
     "reminder_history": {
       "zone_classification": 3,
-      "report_scores": 15,
+      "report_scores": 16,
       "feedback_nudge": 3,
-      "stagnant_nudge": 14
+      "stagnant_nudge": 14,
+      "review_issues_pending": 2,
+      "wontfix_growing": 2,
+      "rereview_needed": 1,
+      "rescan_needed": 1
     }
   },
   "config": {
-    "target_strict_score": 95,
+    "target_strict_score": 85,
     "review_max_age_days": 30,
     "review_batch_max_files": 80,
     "holistic_max_age_days": 30,
@@ -347,8 +337,21 @@
     "review_dimensions": [],
     "large_files_threshold": 0,
     "props_threshold": 0,
-    "finding_noise_budget": 10,
-    "finding_noise_global_budget": 0,
-    "languages": {}
+    "issue_noise_budget": 10,
+    "issue_noise_global_budget": 0,
+    "execution_log_max_entries": 10000,
+    "needs_rescan": false,
+    "languages": {},
+    "commit_tracking_enabled": true,
+    "commit_pr": 0,
+    "commit_default_branch": "",
+    "commit_message_template": "desloppify: {status} {count} issue(s) \u2014 {summary}",
+    "trust_plugins": false,
+    "transition_messages": {},
+    "hermes_enabled": false,
+    "hermes_models": {
+      "execute": "openrouter:x-ai/grok-4.20-beta",
+      "review": "openrouter:google/gemini-3.1-pro-preview"
+    }
   }
 }

@@ -9,11 +9,9 @@ import logging
 import sys
 
 from src.agents.config import AgentConfig
-from src.agents.graph import (
-    WorkflowSpec, DirectEdge, build_capabilities_map,
-    create_task_dispatcher, create_workflow_spec,
-)
-from src.agents.orchestrator import AgentOrchestrator, human_review_node
+from src.agents.llm.tools import build_agent_tools
+from src.agents.human_review import human_review_node
+from src.agents.orchestrator import AgentOrchestrator
 from src.agents.services import TaskDispatchService, ProducerService
 from src.agents.llm import LLMConfig, OllamaProvider
 from src.agents.llm.tool import AgentTool
@@ -23,7 +21,7 @@ from src.events import EventHandler, EventType
 from src.project.files import FileManager
 from src.project.manager import ProjectManager, parse_persisted_tasks
 from src.ui.logging_handler import LoggingBridge
-from src.ui.bridge import QtCommandBridge, QtEventBridge
+from src.ui.bridge import QtCommandBridge, QtEventBridge, OrchestratorBridge
 from src.agents.llm.prompt_templates import (
     GAME_ARTIST_SYSTEM_PROMPT,
     GAME_DESIGNER_SYSTEM_PROMPT,
@@ -31,14 +29,7 @@ from src.agents.llm.prompt_templates import (
     PROJECT_DIRECTOR_SYSTEM_PROMPT,
     DISCOVERY_SYSTEM_PROMPT,
 )
-from src.agents.llm.tools import (
-    _create_assign_task_tool,
-    _create_file_tool,
-    _create_list_files_tool,
-    _create_list_tasks_tool,
-    _create_read_file_tool,
-    _create_set_direction_tool,
-)
+from src.agents.graph import WorkflowSpec
 
 
 
@@ -90,9 +81,11 @@ def _create_agents(
     file_tool: AgentTool,
     list_files_tool: AgentTool,
     read_file_tool: AgentTool,
-    assign_task_tool: AgentTool,
+    create_task_tool: AgentTool,
     list_tasks_tool: AgentTool,
-    set_direction_tool: AgentTool,
+    report_gap_tool: AgentTool,
+    read_rubric_tool: AgentTool,
+    creative_review_tool: AgentTool,
 ) -> dict:
     """Create all agents for the application."""
     from src.agents.base import Agent, AgentRole
@@ -107,10 +100,12 @@ def _create_agents(
             config=AgentConfig(
                 event_handler=event_handler,
                 llm_config=llm_config,
-                knowledge_path="production/",
-                # Director reads the project and sets strategic direction via
-                # set_direction — it never creates tasks directly.
-                tools=[list_files_tool, read_file_tool, list_tasks_tool, set_direction_tool],
+                knowledge_path="game_design/",
+                tools=[
+                    list_files_tool,
+                    read_file_tool,
+                    creative_review_tool,
+                ],
                 system_prompt=PROJECT_DIRECTOR_SYSTEM_PROMPT,
                 capabilities=[],
             ),
@@ -121,9 +116,15 @@ def _create_agents(
             config=AgentConfig(
                 event_handler=event_handler,
                 llm_config=llm_config,
-                knowledge_path="production/",
-                # Discovery reads the Director's directive and creates the task.
-                tools=[list_files_tool, read_file_tool, list_tasks_tool, assign_task_tool],
+                knowledge_path="discovery/",
+                tools=[
+                    list_files_tool,
+                    read_file_tool,
+                    list_tasks_tool,
+                    report_gap_tool,
+                    read_rubric_tool,
+                    create_task_tool,
+                ],
                 system_prompt=DISCOVERY_SYSTEM_PROMPT,
                 capabilities=[],
             ),
@@ -176,7 +177,7 @@ def _load_persisted_tasks(
 ) -> None:
     """Read tasks.json from the selected project and pre-populate ProjectManager.
 
-    This must run before any agent starts so the duplicate guard in assign_task
+    This must run before any agent starts so the duplicate guard in create_task
     has visibility of tasks created in previous sessions.  Errors are logged
     as warnings; a missing or malformed tasks.json is treated as an empty list.
     """
@@ -217,18 +218,23 @@ def _setup_components() -> tuple:
             file_manager, llm_provider, command_executor)
 
 
-def _setup_bridges(event_handler: EventHandler, command_bus: CommandBus) -> tuple:
+def _setup_bridges(
+    event_handler: EventHandler,
+    command_bus: CommandBus,
+    orchestrator_bridge: OrchestratorBridge | None = None,
+) -> tuple:
     """Set up Qt bridges for UI-backend communication.
 
     Args:
         event_handler: Event handler to bridge to Qt.
         command_bus: Command bus to bridge to Qt.
+        orchestrator_bridge: Optional orchestrator facade for workflow control.
 
     Returns:
         Tuple of (qt_event_bridge, qt_command_bridge, qt_log_handler).
     """
     qt_event_bridge = QtEventBridge(event_handler)
-    qt_command_bridge = QtCommandBridge(command_bus)
+    qt_command_bridge = QtCommandBridge(command_bus, orchestrator_bridge)
     logging_bridge = LoggingBridge()
     qt_log_handler = logging_bridge.create_handler(level=logging.DEBUG)
     logging_bridge.attach_to_root()
@@ -294,57 +300,40 @@ def main() -> int:
         command_bus.register(CreateProjectCommand,
                         command_executor.handle_create_project)
 
-        # Create agents and orchestrator
-        file_tool = _create_file_tool(file_manager)
-        list_files_tool = _create_list_files_tool()
-        read_file_tool = _create_read_file_tool()
-        list_tasks_tool = _create_list_tasks_tool(project_manager)
-        set_direction_tool = _create_set_direction_tool()
-        assign_task_tool = _create_assign_task_tool(event_handler, project_manager)
+        # Create agents and orchestrator (event-driven dispatch via services)
+        tools = build_agent_tools(file_manager, project_manager)
         agents = _create_agents(
             event_handler,
             llm_provider.config,
-            file_tool,
-            list_files_tool,
-            read_file_tool,
-            assign_task_tool,
-            list_tasks_tool,
-            set_direction_tool,
+            tools["file"],
+            tools["list_files"],
+            tools["read_file"],
+            tools["create_task"],
+            tools["list_tasks"],
+            tools["report_gap"],
+            tools["read_rubric"],
+            tools["submit_creative_review"],
         )
 
-        # Build capability map from agent metadata — no hardcoded route dict.
-        capabilities_map = build_capabilities_map(agents)
-
-        # task_dispatcher is a plain callable node; it queries the marketplace
-        # and claims the next open task before the CapabilityEdge routes it.
-        task_dispatcher = create_task_dispatcher(project_manager, capabilities_map)
-
-        spec = create_workflow_spec(
-            producer_name=agents["project_director"].name,
-            dispatcher_name="task_dispatcher",
-            capabilities_map=capabilities_map,
-        )
-
-        # Explicit producer chain: Project Director analyses the project and
-        # sets strategic direction; Discovery Agent reads that direction and
-        # creates the specific task in the marketplace.
         producer_spec = WorkflowSpec(
-            entry_point="project_director",
-            edges=[DirectEdge(source="project_director", target="discovery_agent")],
+            entry_point="discovery_agent",
+            edges=[],
         )
 
         nodes = {
             **agents,
-            "task_dispatcher": task_dispatcher,
             "human_review": human_review_node,
         }
         agent_orchestrator = AgentOrchestrator(
-            event_handler, nodes=nodes, spec=spec, producer_spec=producer_spec)
+            event_handler,
+            nodes=nodes,
+            producer_spec=producer_spec,
+            event_driven=True,
+        )
+        orchestrator_bridge = OrchestratorBridge(agent_orchestrator)
 
-        # Wire event-driven services
-        # TaskDispatchService reacts to TASK_CREATED → runs specialist + review graph
-        # ProducerService reacts to TASK_COMPLETED → re-runs Producer for more tasks
         task_dispatch_service = TaskDispatchService(project_manager, agent_orchestrator)
+        agent_orchestrator._task_dispatch = task_dispatch_service
         producer_service = ProducerService(agent_orchestrator)
         event_handler.subscribe_async(
             EventType.TASK_CREATED, task_dispatch_service.on_task_created
@@ -355,7 +344,7 @@ def main() -> int:
 
         # Set up bridges
         qt_event_bridge, qt_command_bridge, qt_log_handler = _setup_bridges(
-            event_handler, command_bus)
+            event_handler, command_bus, orchestrator_bridge)
 
         # Create Qt application
         app = QApplication(sys.argv)
@@ -367,14 +356,14 @@ def main() -> int:
         if not selected_project:
             return 0
 
-        # Pre-load persisted tasks so the duplicate guard in assign_task sees
+        # Pre-load persisted tasks so the duplicate guard in create_task sees
         # tasks created in previous sessions before any agent runs.
         _load_persisted_tasks(project_manager, selected_project, logger)
 
         # Create and show main window
         window = MainWindow(
             qt_event_bridge, qt_command_bridge,
-            qt_log_handler, agent_orchestrator, selected_project
+            qt_log_handler, file_manager, selected_project
         )
         window.show()
 

@@ -1,0 +1,668 @@
+{
+  "version": 8,
+  "created": "2026-06-04T07:49:20+00:00",
+  "updated": "2026-06-04T10:48:43+00:00",
+  "queue_order": [
+    "workflow::create-plan",
+    "subjective::abstraction_fitness",
+    "subjective::convention_outlier",
+    "subjective::cross_module_architecture",
+    "subjective::dependency_health",
+    "subjective::design_coherence",
+    "subjective::error_consistency",
+    "subjective::high_level_elegance",
+    "subjective::low_level_elegance",
+    "subjective::mid_level_elegance",
+    "subjective::test_strategy",
+    "subjective::ai_generated_debt",
+    "subjective::package_organization",
+    "triage::strategize",
+    "triage::observe",
+    "triage::reflect",
+    "triage::organize",
+    "triage::enrich",
+    "triage::sense-check",
+    "triage::commit"
+  ],
+  "deferred": [],
+  "skipped": {},
+  "active_cluster": "auto/review-cross_module_architecture",
+  "overrides": {
+    "test_coverage::src/ui/main_window.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/main_window.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/output_panel.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/output_panel.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/file_explorer_panel.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/file_explorer_panel.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/agent_panel.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/agent_panel.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/project_selection_window.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/project_selection_window.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/llm_config_panel.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/llm_config_panel.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/project_detail_view.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/project_detail_view.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/human_review_dialog.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/human_review_dialog.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/agents/state_factory.py::untested_module": {
+      "issue_id": "test_coverage::src/agents/state_factory.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "test_coverage::src/ui/orchestrator_bridge.py::untested_module": {
+      "issue_id": "test_coverage::src/ui/orchestrator_bridge.py::untested_module",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/test_coverage-untested_module",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "review::.::holistic::cross_module_architecture::services_private_orchestrator_coupling::8cf5d93f": {
+      "issue_id": "review::.::holistic::cross_module_architecture::services_private_orchestrator_coupling::8cf5d93f",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::cross_module_architecture::ui_bypasses_bridge_for_orchestrator::30bb4fa6": {
+      "issue_id": "review::.::holistic::cross_module_architecture::ui_bypasses_bridge_for_orchestrator::30bb4fa6",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::cross_module_architecture::project_domain_coupled_to_agents::bc907564": {
+      "issue_id": "review::.::holistic::cross_module_architecture::project_domain_coupled_to_agents::bc907564",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::cross_module_architecture::file_io_not_centralized::17114a8a": {
+      "issue_id": "review::.::holistic::cross_module_architecture::file_io_not_centralized::17114a8a",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::high_level_elegance::dual_task_dispatch_paradigms::60e46a17": {
+      "issue_id": "review::.::holistic::high_level_elegance::dual_task_dispatch_paradigms::60e46a17",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::high_level_elegance::duplicated_agent_message_bootstrap::021e3425": {
+      "issue_id": "review::.::holistic::high_level_elegance::duplicated_agent_message_bootstrap::021e3425",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::high_level_elegance::orchestrator_monolith::447ab6d2": {
+      "issue_id": "review::.::holistic::high_level_elegance::orchestrator_monolith::447ab6d2",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/review-high_level_elegance",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "review::.::holistic::convention_outlier::hardcoded_tasks_json_path::e4ff569f": {
+      "issue_id": "review::.::holistic::convention_outlier::hardcoded_tasks_json_path::e4ff569f",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::convention_outlier::private_tool_factories_in_app::80d6010c": {
+      "issue_id": "review::.::holistic::convention_outlier::private_tool_factories_in_app::80d6010c",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::error_consistency::inconsistent_tool_error_shapes::6a302420": {
+      "issue_id": "review::.::holistic::error_consistency::inconsistent_tool_error_shapes::6a302420",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/review-error_consistency",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "review::.::holistic::error_consistency::create_project_ignores_failure::323e9ba1": {
+      "issue_id": "review::.::holistic::error_consistency::create_project_ignores_failure::323e9ba1",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::error_consistency::get_workflow_state_silent_failure::4167f0cb": {
+      "issue_id": "review::.::holistic::error_consistency::get_workflow_state_silent_failure::4167f0cb",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::mid_level_elegance::task_creation_dialog_empty_combos::e694f352": {
+      "issue_id": "review::.::holistic::mid_level_elegance::task_creation_dialog_empty_combos::e694f352",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::mid_level_elegance::kanban_state_routing_duplicated::17d380be": {
+      "issue_id": "review::.::holistic::mid_level_elegance::kanban_state_routing_duplicated::17d380be",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::dependency_health::pytest_in_runtime_deps::93a4fbb0": {
+      "issue_id": "review::.::holistic::dependency_health::pytest_in_runtime_deps::93a4fbb0",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::dependency_health::unused_langchain_package::a654815e": {
+      "issue_id": "review::.::holistic::dependency_health::unused_langchain_package::a654815e",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::test_strategy::main_window_untested::9875445d": {
+      "issue_id": "review::.::holistic::test_strategy::main_window_untested::9875445d",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::test_strategy::event_driven_pipeline_unverified::cc2aab0a": {
+      "issue_id": "review::.::holistic::test_strategy::event_driven_pipeline_unverified::cc2aab0a",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::low_level_elegance::sync_async_loop_duplication::8b48fd60": {
+      "issue_id": "review::.::holistic::low_level_elegance::sync_async_loop_duplication::8b48fd60",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::low_level_elegance::mutable_default_nodes_arg::9bc0f866": {
+      "issue_id": "review::.::holistic::low_level_elegance::mutable_default_nodes_arg::9bc0f866",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::design_coherence::ui_bypasses_file_manager::64fccf77": {
+      "issue_id": "review::.::holistic::design_coherence::ui_bypasses_file_manager::64fccf77",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "review::.::holistic::design_coherence::unused_full_compiled_graph::41ecda3a": {
+      "issue_id": "review::.::holistic::design_coherence::unused_full_compiled_graph::41ecda3a",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": null,
+      "updated_at": "2026-06-04T10:45:55+00:00"
+    },
+    "subjective::abstraction_fitness": {
+      "issue_id": "subjective::abstraction_fitness",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/stale-review",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "subjective::convention_outlier": {
+      "issue_id": "subjective::convention_outlier",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/stale-review",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "subjective::cross_module_architecture": {
+      "issue_id": "subjective::cross_module_architecture",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/stale-review",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "subjective::design_coherence": {
+      "issue_id": "subjective::design_coherence",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/stale-review",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    },
+    "subjective::error_consistency": {
+      "issue_id": "subjective::error_consistency",
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "cluster": "auto/stale-review",
+      "updated_at": "2026-06-04T07:49:21+00:00"
+    }
+  },
+  "clusters": {
+    "auto/test_coverage-untested_module": {
+      "name": "auto/test_coverage-untested_module",
+      "description": "Fix 10 test coverage issues",
+      "issue_ids": [
+        "test_coverage::src/ui/main_window.py::untested_module",
+        "test_coverage::src/ui/output_panel.py::untested_module",
+        "test_coverage::src/ui/file_explorer_panel.py::untested_module",
+        "test_coverage::src/ui/agent_panel.py::untested_module",
+        "test_coverage::src/ui/project_selection_window.py::untested_module",
+        "test_coverage::src/ui/llm_config_panel.py::untested_module",
+        "test_coverage::src/ui/project_detail_view.py::untested_module",
+        "test_coverage::src/ui/human_review_dialog.py::untested_module",
+        "test_coverage::src/agents/state_factory.py::untested_module",
+        "test_coverage::src/ui/orchestrator_bridge.py::untested_module"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "detector::test_coverage::untested_module",
+      "action": "review test coverage gaps",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-cross_module_architecture": {
+      "name": "auto/review-cross_module_architecture",
+      "description": "Address 4 cross_module_architecture review issues",
+      "issue_ids": [
+        "review::.::holistic::cross_module_architecture::services_private_orchestrator_coupling",
+        "review::.::holistic::cross_module_architecture::ui_bypasses_bridge_for_orchestrator",
+        "review::.::holistic::cross_module_architecture::project_domain_coupled_to_agents",
+        "review::.::holistic::cross_module_architecture::file_io_not_centralized"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::cross_module_architecture",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-high_level_elegance": {
+      "name": "auto/review-high_level_elegance",
+      "description": "Address 3 high_level_elegance review issues",
+      "issue_ids": [
+        "review::.::holistic::high_level_elegance::dual_task_dispatch_paradigms",
+        "review::.::holistic::high_level_elegance::duplicated_agent_message_bootstrap",
+        "review::.::holistic::high_level_elegance::orchestrator_monolith"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::high_level_elegance",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-convention_outlier": {
+      "name": "auto/review-convention_outlier",
+      "description": "Address 2 convention_outlier review issues",
+      "issue_ids": [
+        "review::.::holistic::convention_outlier::hardcoded_tasks_json_path",
+        "review::.::holistic::convention_outlier::private_tool_factories_in_app"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::convention_outlier",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-error_consistency": {
+      "name": "auto/review-error_consistency",
+      "description": "Address 3 error_consistency review issues",
+      "issue_ids": [
+        "review::.::holistic::error_consistency::inconsistent_tool_error_shapes",
+        "review::.::holistic::error_consistency::create_project_ignores_failure",
+        "review::.::holistic::error_consistency::get_workflow_state_silent_failure"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::error_consistency",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-mid_level_elegance": {
+      "name": "auto/review-mid_level_elegance",
+      "description": "Address 2 mid_level_elegance review issues",
+      "issue_ids": [
+        "review::.::holistic::mid_level_elegance::task_creation_dialog_empty_combos",
+        "review::.::holistic::mid_level_elegance::kanban_state_routing_duplicated"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::mid_level_elegance",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-dependency_health": {
+      "name": "auto/review-dependency_health",
+      "description": "Address 2 dependency_health review issues",
+      "issue_ids": [
+        "review::.::holistic::dependency_health::pytest_in_runtime_deps",
+        "review::.::holistic::dependency_health::unused_langchain_package"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::dependency_health",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-test_strategy": {
+      "name": "auto/review-test_strategy",
+      "description": "Address 2 test_strategy review issues",
+      "issue_ids": [
+        "review::.::holistic::test_strategy::main_window_untested",
+        "review::.::holistic::test_strategy::event_driven_pipeline_unverified"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::test_strategy",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-low_level_elegance": {
+      "name": "auto/review-low_level_elegance",
+      "description": "Address 2 low_level_elegance review issues",
+      "issue_ids": [
+        "review::.::holistic::low_level_elegance::sync_async_loop_duplication",
+        "review::.::holistic::low_level_elegance::mutable_default_nodes_arg"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::low_level_elegance",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/review-design_coherence": {
+      "name": "auto/review-design_coherence",
+      "description": "Address 2 design_coherence review issues",
+      "issue_ids": [
+        "review::.::holistic::design_coherence::ui_bypasses_file_manager",
+        "review::.::holistic::design_coherence::unused_full_compiled_graph"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "review::design_coherence",
+      "action": "address design quality issues from AI code review",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "refactor",
+      "execution_policy": "planned_only"
+    },
+    "auto/stale-review": {
+      "name": "auto/stale-review",
+      "description": "Re-review 5 stale subjective dimensions",
+      "issue_ids": [
+        "subjective::abstraction_fitness",
+        "subjective::convention_outlier",
+        "subjective::cross_module_architecture",
+        "subjective::design_coherence",
+        "subjective::error_consistency"
+      ],
+      "created_at": "2026-06-04T07:49:21+00:00",
+      "updated_at": "2026-06-04T07:49:21+00:00",
+      "auto": true,
+      "cluster_key": "subjective::stale",
+      "action": "desloppify review --prepare --dimensions abstraction_fitness,convention_outlier,cross_module_architecture,design_coherence,error_consistency",
+      "execution_status": "review",
+      "user_modified": false,
+      "action_type": "manual_fix",
+      "execution_policy": "planned_only"
+    }
+  },
+  "superseded": {},
+  "promoted_ids": [],
+  "plan_start_scores": {
+    "strict": 56.3,
+    "overall": 62.4,
+    "objective": 89.9,
+    "verified": 89.9
+  },
+  "refresh_state": {
+    "_subjective_migration_pruned": true,
+    "lifecycle_phase": "plan",
+    "postflight_scan_completed_at_scan_count": 17
+  },
+  "execution_log": [
+    {
+      "timestamp": "2026-06-04T07:49:20+00:00",
+      "action": "sync_subjective",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-06-04T07:49:21+00:00",
+      "action": "auto_cluster",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "changes": true
+      }
+    },
+    {
+      "timestamp": "2026-06-04T07:49:21+00:00",
+      "action": "sync_create_plan",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "injected": true
+      }
+    },
+    {
+      "timestamp": "2026-06-04T07:49:21+00:00",
+      "action": "sync_triage",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "injected": true
+      }
+    },
+    {
+      "timestamp": "2026-06-04T07:49:21+00:00",
+      "action": "sync_lifecycle_phase",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "phase": "assessment"
+      }
+    },
+    {
+      "timestamp": "2026-06-04T07:49:21+00:00",
+      "action": "seed_start_scores",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-06-04T07:49:21+00:00",
+      "action": "complete_postflight_scan",
+      "issue_ids": [],
+      "cluster_name": null,
+      "actor": "system",
+      "note": null,
+      "detail": {
+        "scan_count": 17
+      }
+    },
+    {
+      "timestamp": "2026-06-04T07:50:42+00:00",
+      "action": "done",
+      "issue_ids": [
+        "review::.::holistic::cross_module_architecture::file_io_not_centralized::17114a8a",
+        "review::.::holistic::cross_module_architecture::project_domain_coupled_to_agents::bc907564",
+        "review::.::holistic::cross_module_architecture::services_private_orchestrator_coupling::8cf5d93f",
+        "review::.::holistic::cross_module_architecture::ui_bypasses_bridge_for_orchestrator::30bb4fa6",
+        "review::.::holistic::dependency_health::pytest_in_runtime_deps::93a4fbb0",
+        "review::.::holistic::dependency_health::unused_langchain_package::a654815e",
+        "review::.::holistic::design_coherence::ui_bypasses_file_manager::64fccf77",
+        "review::.::holistic::design_coherence::unused_full_compiled_graph::41ecda3a",
+        "review::.::holistic::error_consistency::inconsistent_tool_error_shapes::6a302420",
+        "review::.::holistic::high_level_elegance::dual_task_dispatch_paradigms::60e46a17"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Routed file tools through FileManager; decoupled AgentTask; orchestrator public API and OrchestratorBridge; dev deps; event_driven mode; state_factory; standardized tool errors; kanban/main_window FileManager usage",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-06-04T10:45:53+00:00",
+      "action": "done",
+      "issue_ids": [
+        "services_private_orchestrator_coupling",
+        "ui_bypasses_bridge_for_orchestrator",
+        "project_domain_coupled_to_agents",
+        "file_io_not_centralized",
+        "dual_task_dispatch_paradigms",
+        "duplicated_agent_message_bootstrap",
+        "hardcoded_tasks_json_path",
+        "private_tool_factories_in_app",
+        "create_project_ignores_failure",
+        "get_workflow_state_silent_failure",
+        "task_creation_dialog_empty_combos",
+        "kanban_state_routing_duplicated",
+        "pytest_in_runtime_deps",
+        "unused_langchain_package",
+        "sync_async_loop_duplication",
+        "mutable_default_nodes_arg",
+        "ui_bypasses_file_manager",
+        "unused_full_compiled_graph",
+        "main_window_untested",
+        "event_driven_pipeline_unverified"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Implemented public orchestrator API, QtCommandBridge orchestrator wiring, FileManager events, state_factory, dev deps cleanup, and integration tests.",
+      "detail": {}
+    },
+    {
+      "timestamp": "2026-06-04T10:45:55+00:00",
+      "action": "resolve",
+      "issue_ids": [
+        "review::.::holistic::cross_module_architecture::services_private_orchestrator_coupling::8cf5d93f",
+        "review::.::holistic::cross_module_architecture::ui_bypasses_bridge_for_orchestrator::30bb4fa6",
+        "review::.::holistic::cross_module_architecture::project_domain_coupled_to_agents::bc907564",
+        "review::.::holistic::cross_module_architecture::file_io_not_centralized::17114a8a",
+        "review::.::holistic::high_level_elegance::dual_task_dispatch_paradigms::60e46a17",
+        "review::.::holistic::high_level_elegance::duplicated_agent_message_bootstrap::021e3425",
+        "review::.::holistic::convention_outlier::hardcoded_tasks_json_path::e4ff569f",
+        "review::.::holistic::convention_outlier::private_tool_factories_in_app::80d6010c",
+        "review::.::holistic::error_consistency::create_project_ignores_failure::323e9ba1",
+        "review::.::holistic::error_consistency::get_workflow_state_silent_failure::4167f0cb",
+        "review::.::holistic::mid_level_elegance::task_creation_dialog_empty_combos::e694f352",
+        "review::.::holistic::mid_level_elegance::kanban_state_routing_duplicated::17d380be",
+        "review::.::holistic::dependency_health::pytest_in_runtime_deps::93a4fbb0",
+        "review::.::holistic::dependency_health::unused_langchain_package::a654815e",
+        "review::.::holistic::low_level_elegance::sync_async_loop_duplication::8b48fd60",
+        "review::.::holistic::low_level_elegance::mutable_default_nodes_arg::9bc0f866",
+        "review::.::holistic::design_coherence::ui_bypasses_file_manager::64fccf77",
+        "review::.::holistic::design_coherence::unused_full_compiled_graph::41ecda3a",
+        "review::.::holistic::test_strategy::main_window_untested::9875445d",
+        "review::.::holistic::test_strategy::event_driven_pipeline_unverified::cc2aab0a"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Implemented public orchestrator API, QtCommandBridge orchestrator wiring, FileManager events, state_factory, dev deps cleanup, and integration tests.",
+      "detail": {
+        "status": "fixed",
+        "attestation": "I have actually Implemented public orchestrator API, QtCommandBridge orchestrator wiring, FileManager events, state_factory, dev deps cleanup, and integration tests. and I am not gaming the score."
+      }
+    },
+    {
+      "timestamp": "2026-06-04T10:48:43+00:00",
+      "action": "done",
+      "issue_ids": [
+        "orchestrator_monolith"
+      ],
+      "cluster_name": null,
+      "actor": "user",
+      "note": "Split orchestrator into human_review.py, graph_registry.py, workflow_runner.py; orchestrator is now a thin coordinator.",
+      "detail": {}
+    }
+  ],
+  "epic_triage_meta": {},
+  "commit_log": [],
+  "uncommitted_issues": [
+    "review::.::holistic::cross_module_architecture::services_private_orchestrator_coupling::8cf5d93f",
+    "review::.::holistic::cross_module_architecture::ui_bypasses_bridge_for_orchestrator::30bb4fa6",
+    "review::.::holistic::cross_module_architecture::project_domain_coupled_to_agents::bc907564",
+    "review::.::holistic::cross_module_architecture::file_io_not_centralized::17114a8a",
+    "review::.::holistic::high_level_elegance::dual_task_dispatch_paradigms::60e46a17",
+    "review::.::holistic::high_level_elegance::duplicated_agent_message_bootstrap::021e3425",
+    "review::.::holistic::convention_outlier::hardcoded_tasks_json_path::e4ff569f",
+    "review::.::holistic::convention_outlier::private_tool_factories_in_app::80d6010c",
+    "review::.::holistic::error_consistency::create_project_ignores_failure::323e9ba1",
+    "review::.::holistic::error_consistency::get_workflow_state_silent_failure::4167f0cb",
+    "review::.::holistic::mid_level_elegance::task_creation_dialog_empty_combos::e694f352",
+    "review::.::holistic::mid_level_elegance::kanban_state_routing_duplicated::17d380be",
+    "review::.::holistic::dependency_health::pytest_in_runtime_deps::93a4fbb0",
+    "review::.::holistic::dependency_health::unused_langchain_package::a654815e",
+    "review::.::holistic::low_level_elegance::sync_async_loop_duplication::8b48fd60",
+    "review::.::holistic::low_level_elegance::mutable_default_nodes_arg::9bc0f866",
+    "review::.::holistic::design_coherence::ui_bypasses_file_manager::64fccf77",
+    "review::.::holistic::design_coherence::unused_full_compiled_graph::41ecda3a",
+    "review::.::holistic::test_strategy::main_window_untested::9875445d",
+    "review::.::holistic::test_strategy::event_driven_pipeline_unverified::cc2aab0a"
+  ],
+  "commit_tracking_branch": null,
+  "scan_count_at_plan_start": 17
+}

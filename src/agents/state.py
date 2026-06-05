@@ -14,11 +14,14 @@ class AgentMessage(TypedDict):
     """
 
     # ── Task context ─────────────────────────────────────────────────────────
-    # Written by the Producer (via assign_task), read by Specialist agents.
+    # Written by Discovery (via create_task), read by Specialist agents.
     task_id: str
     task_type: str                  # "design" | "gameplay" | "systems" | "art"
     task_description: str           # Full brief the specialist must act on
     acceptance_criteria: list[str]  # Objective checks for human review
+    capability: str                 # Studio capability id (e.g. game_vision)
+    recommended_artifact: str       # Target file path (e.g. design/VISION.md)
+    rubric: str                     # Knowledge rubric id used for quality criteria
 
     # ── Filesystem contract ──────────────────────────────────────────────────
     # Set at startup and never mutated during the workflow.
@@ -47,6 +50,11 @@ class AgentMessage(TypedDict):
     human_review_approved: Optional[bool]   # None until the reviewer acts
     human_review_comment: Optional[str]
 
+    # ── Creative Director review ───────────────────────────────────────────────
+    # Written by Project Director (submit_creative_review) before human review.
+    creative_review_approved: Optional[bool]
+    creative_review_comment: Optional[str]
+
     # ── Kanban tracking ──────────────────────────────────────────────────────
     # Written by task_dispatcher, consumed by Agent.run to move kanban cards.
     current_task_id: Optional[str]
@@ -57,7 +65,8 @@ class AgentMessage(TypedDict):
     # "manual_assignment" — tasks wait for human assignment via the UI.
     task_allocation_mode: str
 
-    # ── Project Director output ───────────────────────────────────────────────
-    # Written by the Project Director (via set_direction tool), read by the
-    # Discovery Agent to focus its gap analysis on the right area.
+    # ── Project Director output (optional legacy) ─────────────────────────────
     direction: str
+
+    # ── Discovery gap analysis ───────────────────────────────────────────────
+    gap_report: dict

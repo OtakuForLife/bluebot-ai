@@ -4,16 +4,18 @@ import pytest
 
 from langchain_core.runnables import RunnableConfig
 
+from src.agents.graph_registry import GraphRegistry
 from src.agents.graph import (
     GraphBuilder,
     WorkflowSpec, DirectEdge, ConditionalEdge, CapabilityEdge,
     create_task_dispatcher,
 )
-from src.agents.orchestrator import AgentOrchestrator, human_review_node
+from src.agents.human_review import human_review_node
+from src.agents.orchestrator import AgentOrchestrator
 from src.agents.services import TaskDispatchService, ProducerService
 from src.agents.base import Agent, AgentRole, AgentConfig
 from src.agents.state import AgentMessage
-from src.events import EventHandler
+from src.events import EventHandler, EventType
 from src.project.manager import ProjectManager
 from src.project.tasks import TaskStatus
 
@@ -37,7 +39,7 @@ def test_agent_orchestrator_initialization() -> None:
         {"agent1": agent},
         WorkflowSpec(entry_point="agent1"),
     )
-    assert orch._system_running is False
+    assert orch.system_running is False
 
 
 def test_agent_orchestrator_with_nodes() -> None:
@@ -47,8 +49,8 @@ def test_agent_orchestrator_with_nodes() -> None:
         {"test_agent": agent},
         WorkflowSpec(entry_point="test_agent"),
     )
-    assert "test_agent" in orch._agents
-    assert orch._agents["test_agent"] is agent
+    assert "test_agent" in orch.nodes
+    assert orch.nodes["test_agent"] is agent
 
 
 def test_agent_orchestrator_creates_graph() -> None:
@@ -158,13 +160,13 @@ def test_agent_orchestrator_default_spec() -> None:
 
 
 def test_agent_orchestrator_multiple_agents() -> None:
-    """All five agent nodes are stored in _agents."""
+    """All five agent nodes are stored in nodes."""
     agents = {f"agent{i}": Agent(f"agent{i}", AgentRole.GAME_DESIGNER, AgentConfig())
               for i in range(5)}
     orch = _make_orchestrator(agents, WorkflowSpec(entry_point="agent0"))
-    assert len(orch._agents) == 5
+    assert len(orch.nodes) == 5
     for i in range(5):
-        assert f"agent{i}" in orch._agents
+        assert f"agent{i}" in orch.nodes
 
 
 def test_agent_orchestrator_with_callable_node() -> None:
@@ -183,7 +185,7 @@ def test_agent_orchestrator_with_callable_node() -> None:
     )
     assert orch.graph is not None
     assert orch.compiled_graph is not None
-    assert "review" in orch._agents
+    assert "review" in orch.nodes
 
 
 def test_human_review_node_present_in_graph() -> None:
@@ -203,7 +205,7 @@ def test_human_review_node_present_in_graph() -> None:
     )
     assert orch.graph is not None
     assert orch.compiled_graph is not None
-    assert "human_review" in orch._agents
+    assert "human_review" in orch.nodes
 
 
 def test_orchestrator_has_submit_human_review() -> None:
@@ -314,6 +316,13 @@ def _base_state(**kwargs) -> AgentMessage:
         "task_type": "",
         "task_description": "",
         "acceptance_criteria": [],
+        "capability": "",
+        "recommended_artifact": "",
+        "rubric": "",
+        "gap_report": {},
+        "direction": "",
+        "creative_review_approved": None,
+        "creative_review_comment": None,
         "no_more_tasks": False,
         "human_review_approved": None,
         "human_review_comment": None,
@@ -405,68 +414,6 @@ def test_dispatcher_routes_multi_capability_agent(pm) -> None:
 
 
 
-# ── AgentOrchestrator event-driven attributes ─────────────────────────────────
-
-def test_orchestrator_builds_compiled_producer_for_no_capability_agent() -> None:
-    """_compiled_producer is set when an agent has an empty capabilities list."""
-    producer = Agent("game_producer", AgentRole.GAME_PRODUCER,
-                     AgentConfig(capabilities=[]))
-    designer = Agent("game_designer", AgentRole.GAME_DESIGNER,
-                     AgentConfig(capabilities=["design"]))
-    orch = _make_orchestrator(
-        {"game_producer": producer, "game_designer": designer,
-         "human_review": human_review_node},
-        WorkflowSpec(entry_point="game_producer"),
-    )
-    assert orch._compiled_producer is not None
-
-
-def test_orchestrator_compiled_producer_none_when_no_producer_agent() -> None:
-    """_compiled_producer is None when every agent has capabilities (no Director)."""
-    designer = Agent("designer", AgentRole.GAME_DESIGNER,
-                     AgentConfig(capabilities=["design"]))
-    orch = _make_orchestrator(
-        {"designer": designer},
-        WorkflowSpec(entry_point="designer"),
-    )
-    assert orch._compiled_producer is None
-
-
-def test_orchestrator_builds_task_graphs_for_specialist_agents() -> None:
-    """_task_graphs maps each capability to the correct agent and compiled graph."""
-    producer = Agent("game_producer", AgentRole.GAME_PRODUCER,
-                     AgentConfig(capabilities=[]))
-    designer = Agent("game_designer", AgentRole.GAME_DESIGNER,
-                     AgentConfig(capabilities=["design"]))
-    developer = Agent("game_developer", AgentRole.GAME_PROGRAMMER,
-                      AgentConfig(capabilities=["gameplay", "systems"]))
-    orch = _make_orchestrator(
-        {"game_producer": producer, "game_designer": designer,
-         "game_developer": developer, "human_review": human_review_node},
-        WorkflowSpec(entry_point="game_producer"),
-    )
-    assert "design" in orch._task_graphs
-    assert "gameplay" in orch._task_graphs
-    assert "systems" in orch._task_graphs
-    # Producer has no capabilities → not in task_graphs
-    assert "game_producer" not in orch._task_graphs
-
-    agent_name, compiled = orch._task_graphs["design"]
-    assert agent_name == "game_designer"
-    assert compiled is not None
-
-
-def test_orchestrator_task_graphs_empty_when_no_specialists() -> None:
-    """_task_graphs is empty when the only agent has no capabilities."""
-    producer = Agent("game_producer", AgentRole.GAME_PRODUCER,
-                     AgentConfig(capabilities=[]))
-    orch = _make_orchestrator(
-        {"game_producer": producer},
-        WorkflowSpec(entry_point="game_producer"),
-    )
-    assert orch._task_graphs == {}
-
-
 # ── TaskDispatchService tests ─────────────────────────────────────────────────
 
 def test_task_dispatch_service_instantiates() -> None:
@@ -495,6 +442,162 @@ def test_task_dispatch_service_has_on_task_created() -> None:
     assert inspect.iscoroutinefunction(service.on_task_created)
 
 
+def test_task_dispatch_service_runs_workflow_for_created_task() -> None:
+    """TASK_CREATED handler claims the task and invokes the specialist graph."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.agents.state_factory import build_initial_workflow_state
+
+    pm = ProjectManager(event_handler=EventHandler())
+    mock_orch = MagicMock()
+    mock_compiled = MagicMock()
+    mock_orch.get_task_graph.return_value = ("game_designer", mock_compiled)
+    mock_orch.get_base_state.return_value = build_initial_workflow_state(
+        {"name": "Test", "brief": "A game"}
+    )
+    mock_orch.run_workflow = AsyncMock(
+        return_value={
+            "creative_review_approved": True,
+            "creative_review_comment": "Aligned with vision",
+            "human_review_approved": True,
+            "human_review_comment": "ok",
+        }
+    )
+    mock_orch.event_handler = EventHandler()
+    completed: list = []
+    updated: list = []
+    mock_orch.event_handler.subscribe(
+        EventType.TASK_COMPLETED, lambda e: completed.append(e)
+    )
+    mock_orch.event_handler.subscribe(
+        EventType.TASK_UPDATED, lambda e: updated.append(e)
+    )
+
+    service = TaskDispatchService(pm, mock_orch)
+    task = {
+        "id": "task-42",
+        "title": "Design vision",
+        "description": "Write VISION.md",
+        "task_type": "design",
+        "acceptance_criteria": ["File exists"],
+        "state": TaskStatus.OPEN.value,
+    }
+    pm.add_task(task)
+
+    asyncio.run(service.on_task_created({
+        "type": EventType.TASK_CREATED,
+        "payload": task,
+        "timestamp": "2026-01-01T00:00:00",
+    }))
+
+    mock_orch.run_workflow.assert_awaited_once()
+    assert pm.get_tasks()[0]["state"] == TaskStatus.COMPLETED.value
+    assert pm.get_tasks()[0]["agent"] == "game_designer"
+    assert len(completed) == 1
+    assert completed[0]["payload"]["task_id"] == "task-42"
+    assert any(
+        e["payload"].get("new_state") == TaskStatus.COMPLETED.value for e in updated
+    )
+
+
+def test_task_dispatch_service_reopens_on_director_rejection() -> None:
+    """Creative Director rejection reopens the task and re-dispatches it."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.agents.state_factory import build_initial_workflow_state
+
+    pm = ProjectManager(event_handler=EventHandler())
+    mock_orch = MagicMock()
+    mock_orch.get_task_graph.return_value = ("game_designer", MagicMock())
+    mock_orch.get_base_state.return_value = build_initial_workflow_state(
+        {"name": "Test", "brief": "A game"}
+    )
+    mock_orch.run_workflow = AsyncMock(
+        side_effect=[
+            {
+                "creative_review_approved": False,
+                "creative_review_comment": "Tone conflicts with VISION.md",
+            },
+            {
+                "creative_review_approved": True,
+                "human_review_approved": True,
+            },
+        ]
+    )
+    mock_orch.event_handler = EventHandler()
+
+    service = TaskDispatchService(pm, mock_orch)
+    task = {
+        "id": "task-99",
+        "title": "Design vision",
+        "description": "Write VISION.md",
+        "task_type": "design",
+        "state": TaskStatus.OPEN.value,
+    }
+    pm.add_task(task)
+
+    asyncio.run(service.on_task_created({
+        "type": EventType.TASK_CREATED,
+        "payload": task,
+        "timestamp": "2026-01-01T00:00:00",
+    }))
+
+    assert mock_orch.run_workflow.await_count == 2
+    assert "REWORK (Creative Director)" in pm.get_tasks()[0]["description"]
+    assert pm.get_tasks()[0]["state"] == TaskStatus.COMPLETED.value
+
+
+def test_task_dispatch_service_redispatches_on_human_rejection() -> None:
+    """Human rejection reopens the task and re-dispatches it with feedback."""
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock
+
+    from src.agents.state_factory import build_initial_workflow_state
+
+    pm = ProjectManager(event_handler=EventHandler())
+    mock_orch = MagicMock()
+    mock_orch.get_task_graph.return_value = ("game_designer", MagicMock())
+    mock_orch.get_base_state.return_value = build_initial_workflow_state(
+        {"name": "Test", "brief": "A game"}
+    )
+    mock_orch.run_workflow = AsyncMock(
+        side_effect=[
+            {
+                "creative_review_approved": True,
+                "human_review_approved": False,
+                "human_review_comment": "Missing target audience section",
+            },
+            {
+                "creative_review_approved": True,
+                "human_review_approved": True,
+            },
+        ]
+    )
+    mock_orch.event_handler = EventHandler()
+
+    service = TaskDispatchService(pm, mock_orch)
+    task = {
+        "id": "task-reject",
+        "title": "Design vision",
+        "description": "Write VISION.md",
+        "task_type": "design",
+        "state": TaskStatus.OPEN.value,
+    }
+    pm.add_task(task)
+
+    asyncio.run(service.on_task_created({
+        "type": EventType.TASK_CREATED,
+        "payload": task,
+        "timestamp": "2026-01-01T00:00:00",
+    }))
+
+    assert mock_orch.run_workflow.await_count == 2
+    assert "REWORK (Human review)" in pm.get_tasks()[0]["description"]
+    assert pm.get_tasks()[0]["state"] == TaskStatus.COMPLETED.value
+
+
 # ── ProducerService tests ─────────────────────────────────────────────────────
 
 def test_producer_service_instantiates() -> None:
@@ -519,13 +622,13 @@ def test_producer_service_has_on_task_completed() -> None:
 
 
 def test_producer_service_skips_when_no_base_state() -> None:
-    """on_task_completed does nothing when _base_state is not set."""
+    """on_task_completed does nothing when base state is not set."""
     import asyncio
     orch = _make_orchestrator(
         {"a": Agent("a", AgentRole.GAME_PRODUCER, AgentConfig())},
         WorkflowSpec(entry_point="a"),
     )
-    assert orch._base_state is None
+    assert orch.get_base_state() is None
     service = ProducerService(orch)
     # Should return immediately without error
     event = {"type": "task_completed", "payload": {"task_id": "t1"}, "timestamp": ""}
@@ -540,60 +643,54 @@ def test_new_roles_exist() -> None:
     assert AgentRole.DISCOVERY.value == "discovery"
 
 
-def test_orchestrator_uses_producer_spec_for_two_agent_chain() -> None:
-    """When producer_spec is provided, _compiled_producer follows the Director→Discovery chain."""
-    director = Agent("project_director", AgentRole.PROJECT_DIRECTOR,
-                     AgentConfig(capabilities=[]))
-    discovery = Agent("discovery_agent", AgentRole.DISCOVERY,
-                      AgentConfig(capabilities=[]))
-    designer = Agent("game_designer", AgentRole.GAME_DESIGNER,
-                     AgentConfig(capabilities=["design"]))
-
-    producer_spec = WorkflowSpec(
-        entry_point="project_director",
-        edges=[DirectEdge(source="project_director", target="discovery_agent")],
+def test_graph_registry_task_graphs_route_through_director() -> None:
+    """Specialist task graphs run Creative Director review before human review."""
+    director = Agent(
+        "project_director", AgentRole.PROJECT_DIRECTOR, AgentConfig(capabilities=[])
     )
-    main_spec = WorkflowSpec(
-        entry_point="project_director",
-        edges=[DirectEdge(source="project_director", target="game_designer")],
+    designer = Agent(
+        "game_designer", AgentRole.GAME_DESIGNER, AgentConfig(capabilities=["design"])
     )
-
-    orch = AgentOrchestrator(
-        event_handler=EventHandler(),
-        nodes={
+    registry = GraphRegistry(
+        {
             "project_director": director,
-            "discovery_agent": discovery,
             "game_designer": designer,
             "human_review": human_review_node,
         },
-        spec=main_spec,
-        producer_spec=producer_spec,
+        spec=WorkflowSpec(entry_point="game_designer"),
+        producer_spec=None,
+        event_driven=True,
+        human_review_node=human_review_node,
     )
 
-    assert orch._compiled_producer is not None
-    # Specialists still get their per-capability task graphs.
-    assert "design" in orch._task_graphs
-    # Director-type agents have no capabilities → not in task_graphs.
-    assert "project_director" not in orch._task_graphs
-    assert "discovery_agent" not in orch._task_graphs
+    assert "design" in registry.task_graphs
+    _, compiled = registry.task_graphs["design"]
+    assert compiled is not None
 
 
-def test_orchestrator_producer_spec_with_unknown_node_is_skipped() -> None:
-    """Nodes in producer_spec not present in the agents dict are silently ignored."""
-    director = Agent("project_director", AgentRole.PROJECT_DIRECTOR,
-                     AgentConfig(capabilities=[]))
-    producer_spec = WorkflowSpec(
-        entry_point="project_director",
-        edges=[DirectEdge(source="project_director", target="missing_node")],
-    )
-    orch = AgentOrchestrator(
-        event_handler=EventHandler(),
-        nodes={"project_director": director},
-        spec=WorkflowSpec(entry_point="project_director"),
-        producer_spec=producer_spec,
-    )
-    # Only the director node is in the graph; the missing target is excluded.
-    assert orch._compiled_producer is not None
+def test_submit_creative_review_tool_sets_state() -> None:
+    """submit_creative_review propagates verdict into LangGraph state."""
+    from src.agents.llm.tools import _create_submit_creative_review_tool
+
+    tool = _create_submit_creative_review_tool()
+    result = tool.execute({
+        "approved": True,
+        "comment": "Mechanics align with the vision doc.",
+    })
+
+    assert result["creative_review_approved"] is True
+    state_update = tool.consume_state_update()
+    assert state_update["creative_review_comment"] == "Mechanics align with the vision doc."
+
+
+def test_submit_creative_review_requires_comment_on_reject() -> None:
+    from src.agents.llm.tools import _create_submit_creative_review_tool
+
+    tool = _create_submit_creative_review_tool()
+    result = tool.execute({"approved": False, "comment": ""})
+
+    assert result["ok"] is False
+    assert tool.consume_state_update().get("creative_review_approved") is None
 
 
 def test_set_direction_tool_sets_direction_in_state() -> None:
@@ -605,7 +702,6 @@ def test_set_direction_tool_sets_direction_in_state() -> None:
 
     assert isinstance(result, dict)
     assert result["direction"] == "Create the game vision document"
-    # State update is captured via consume_state_update.
     state_update = tool.consume_state_update()
     assert state_update == {"direction": "Create the game vision document"}
 

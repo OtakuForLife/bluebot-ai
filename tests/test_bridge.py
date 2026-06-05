@@ -186,3 +186,27 @@ def test_qt_event_bridge_human_input_events() -> None:
     # Verify human input events were received
     assert EventType.HUMAN_INPUT_REQUESTED in events_received
     assert EventType.HUMAN_INPUT_RECEIVED in events_received
+
+
+def test_qt_command_bridge_orchestrator_delegation() -> None:
+    """QtCommandBridge delegates lifecycle calls to OrchestratorBridge."""
+    from unittest.mock import MagicMock
+
+    from src.ui.bridge import OrchestratorBridge
+
+    command_bus = CommandBus()
+    mock_orch = MagicMock()
+    mock_orch.get_agents.return_value = []
+    orch_bridge = OrchestratorBridge(mock_orch)
+    bridge = QtCommandBridge(command_bus, orch_bridge)
+
+    bridge.submit_human_review("thread-1", True, "looks good")
+    bridge.signal_stop()
+    bridge.update_provider(MagicMock())
+
+    mock_orch.submit_human_review.assert_called_once_with(
+        "thread-1", True, "looks good"
+    )
+    mock_orch.signal_stop.assert_called_once()
+    mock_orch.update_provider.assert_called_once()
+    assert bridge.get_agents() == []

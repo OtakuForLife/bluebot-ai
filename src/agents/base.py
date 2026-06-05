@@ -27,7 +27,75 @@ from src.events import Event, EventHandler, EventType
 from src.project.tasks import AgentTask
 
 
-def _parse_text_tool_calls(text: str) -> list[dict]:
+def _extract_message_text(content: object) -> str:
+    """Normalize AIMessage.content to a plain string."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                if block.get("type") == "text":
+                    parts.append(str(block.get("text", "")))
+                elif "text" in block:
+                    parts.append(str(block["text"]))
+        return "".join(parts)
+    return str(content)
+
+
+def _parse_single_json_tool_call(text: str) -> list[dict]:
+    """Parse a lone JSON object tool call: {"name": "finish", "arguments": {}}."""
+    clean = _re.sub(r"```[a-z]*\n?", "", text).strip()
+    if not clean.startswith("{"):
+        return []
+    try:
+        parsed = _json.loads(clean)
+    except (_json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    name = parsed.get("name") or parsed.get("function")
+    args = (
+        parsed.get("arguments")
+        or parsed.get("args")
+        or parsed.get("parameters")
+        or {}
+    )
+    if name and isinstance(args, dict):
+        return [{"name": str(name), "args": args, "id": str(uuid4())}]
+    return []
+
+
+def _parse_loose_tool_call(text: str, tool_names: set[str]) -> list[dict]:
+    """Parse bare tool names some local models emit as plain text (e.g. 'finish')."""
+    clean = text.strip().strip('"\'`')
+    if not clean:
+        return []
+
+    lower = clean.lower()
+    if lower in tool_names:
+        return [{"name": lower, "args": {}, "id": str(uuid4())}]
+
+    match = _re.match(r"^([A-Za-z_][\w]*)\s*\(\s*\)$", clean)
+    if match and match.group(1).lower() in tool_names:
+        return [{"name": match.group(1).lower(), "args": {}, "id": str(uuid4())}]
+
+    call_match = _re.match(
+        r"^(?:call\s+)?([A-Za-z_][\w]*)\s*\(\s*\)$",
+        clean,
+        _re.IGNORECASE,
+    )
+    if call_match and call_match.group(1).lower() in tool_names:
+        return [{"name": call_match.group(1).lower(), "args": {}, "id": str(uuid4())}]
+
+    return []
+
+
+def _parse_text_tool_calls(text: str, tool_names: set[str] | None = None) -> list[dict]:
     """Try to extract tool calls from a text response that contains JSON.
 
     Some local models (e.g. small Ollama models) output tool calls as JSON
@@ -46,29 +114,38 @@ def _parse_text_tool_calls(text: str) -> list[dict]:
     clean = _re.sub(r"```[a-z]*\n?", "", text).strip()
     # Find the outermost [...] block
     match = _re.search(r"\[.*\]", clean, _re.DOTALL)
-    if not match:
-        return []
-    try:
-        parsed = _json.loads(match.group(0))
-    except (_json.JSONDecodeError, ValueError):
-        return []
-    if not isinstance(parsed, list):
-        return []
-    calls: list[dict] = []
-    for item in parsed:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("name") or item.get("function")
-        # Models use "arguments", "args", or "parameters" interchangeably
-        args = (
-            item.get("arguments")
-            or item.get("args")
-            or item.get("parameters")
-            or {}
-        )
-        if name and isinstance(args, dict):
-            calls.append({"name": name, "args": args, "id": str(uuid4())})
-    return calls
+    if match:
+        try:
+            parsed = _json.loads(match.group(0))
+        except (_json.JSONDecodeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            calls: list[dict] = []
+            for item in parsed:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("name") or item.get("function")
+                args = (
+                    item.get("arguments")
+                    or item.get("args")
+                    or item.get("parameters")
+                    or {}
+                )
+                if name and isinstance(args, dict):
+                    calls.append({"name": name, "args": args, "id": str(uuid4())})
+            if calls:
+                return calls
+
+    single = _parse_single_json_tool_call(clean)
+    if single:
+        return single
+
+    if tool_names:
+        loose = _parse_loose_tool_call(clean, tool_names)
+        if loose:
+            return loose
+
+    return []
 
 
 
@@ -129,12 +206,25 @@ class Agent:
         self.event_handler = config.event_handler
 
         self.capabilities: List[str] = config.capabilities
+        self.logger = logging.getLogger(f"agent.{name}")
+
+        # Load role knowledge before binding tools so list/read_knowledge are available.
+        self.knowledge_dir = Path(config.knowledge_path) if config.knowledge_path else None
+        if self.knowledge_dir:
+            from src.agents.knowledge import KnowledgeBase
+            self.knowledge_base = KnowledgeBase(str(self.knowledge_dir))
+        else:
+            self.knowledge_base = None
+
+        knowledge_tools: list[AgentTool] = []
+        if self.knowledge_base is not None:
+            from src.agents.knowledge_tools import create_knowledge_tools
+            knowledge_tools = create_knowledge_tools(self.knowledge_base)
+
         # finish tool is always available — it is the agent's only exit signal.
-        self.tools = list(config.tools) + [_create_finish_tool()]
+        self.tools = list(config.tools) + knowledge_tools + [_create_finish_tool()]
         lc_tools = [to_langchain_tool(t) for t in self.tools]
         self.tool_lookup = {t.name: t for t in self.tools}
-
-        self.logger = logging.getLogger(f"agent.{name}")
 
         # Create LLM provider using ProviderFactory
         self.llm_config = config.llm_config or LLMConfig()
@@ -142,14 +232,6 @@ class Agent:
         self.langchain_model = LangChainAdapter(provider=self.llm_provider).bind_tools(
             lc_tools, agent_tools=self.tools
         )
-
-        # Load knowledge base
-        self.knowledge_dir = Path(config.knowledge_path) if config.knowledge_path else None
-        if self.knowledge_dir:
-            from src.agents.knowledge import KnowledgeBase
-            self.knowledge_base = KnowledgeBase(str(self.knowledge_dir))
-        else:
-            self.knowledge_base = None
 
     def set_provider(self, provider: "BaseLLMProvider") -> None:  # type: ignore[name-defined]
         """Swap the LLM provider at runtime.
@@ -291,9 +373,38 @@ class Agent:
             f"Workspace: {state.get('workspace_root', '.')}",
             f"Task:\n{state['task_description']}",
         ]
-        # Strategic directive written by the Project Director for the Discovery Agent.
-        if state.get("direction"):
+        if self.role == AgentRole.DISCOVERY and self.knowledge_base:
+            catalog = self.knowledge_base.get_document("studio_deliverables.md")
+            if catalog:
+                context_parts.append(f"Studio Deliverables Catalog:\n{catalog}")
+        elif state.get("direction"):
             context_parts.append(f"Strategic Direction:\n{state['direction']}")
+        if self.role == AgentRole.PROJECT_DIRECTOR:
+            artifact = state.get("recommended_artifact") or ""
+            if artifact:
+                context_parts.append(f"Deliverable under review: {artifact}")
+            created = state.get("created_files") or []
+            if created:
+                files = "\n".join(f"- {path}" for path in created)
+                context_parts.append(f"Files produced this task:\n{files}")
+        if state.get("recommended_artifact"):
+            context_parts.append(
+                f"Target artifact: {state['recommended_artifact']}"
+            )
+        if state.get("capability"):
+            context_parts.append(f"Capability: {state['capability']}")
+        rubric_id = state.get("rubric")
+        if rubric_id:
+            from src.agents.rubrics import load_rubric
+            rubric_body = load_rubric(rubric_id)
+            if rubric_body:
+                context_parts.append(
+                    f"Quality Rubric ({rubric_id}):\n{rubric_body}"
+                )
+            else:
+                context_parts.append(
+                    f"Quality rubric: {rubric_id} (guide file not found in knowledge/)"
+                )
         if state.get("acceptance_criteria"):
             criteria = "\n".join(f"- {c}" for c in state["acceptance_criteria"])
             context_parts.append(f"Acceptance Criteria:\n{criteria}")
@@ -321,12 +432,19 @@ class Agent:
         messages: list = []
         tool_results: list[str] = []
         errors: list[str] = []
-        current_prompt = prompt
         iteration = 0
         finished = False
+        _MAX_ITERATIONS = 25
 
         while not finished:
             iteration += 1
+            if iteration > _MAX_ITERATIONS:
+                self.logger.error(
+                    f"ReAct loop exceeded {_MAX_ITERATIONS} iterations — stopping"
+                )
+                errors.append(f"Exceeded maximum iterations ({_MAX_ITERATIONS})")
+                break
+            current_prompt = prompt + messages
             self.logger.info(f"Calling LLM (iteration {iteration})...")
             response: AIMessage = await self.langchain_model.ainvoke(current_prompt)
             messages.append(response)
@@ -336,15 +454,26 @@ class Agent:
             # If the model produces plain text, log it and feed it back so it
             # can self-correct on the next iteration.
             tool_calls = list(response.tool_calls)
+            tool_names = set(self.tool_lookup.keys())
             if not tool_calls:
-                text = getattr(response, "content", "")
-                tool_calls = _parse_text_tool_calls(text)
+                text = _extract_message_text(getattr(response, "content", ""))
+                tool_calls = _parse_text_tool_calls(text, tool_names)
                 if tool_calls:
-                    self.logger.info(f"Parsed {len(tool_calls)} text-format tool call(s)")
+                    self.logger.info(
+                        f"Parsed {len(tool_calls)} text-format tool call(s) "
+                        f"from: {text[:80]!r}"
+                    )
                 elif text:
                     self.logger.warning(
                         f"LLM produced text instead of a tool call: {str(text)[:300]}"
                     )
+                    messages.append(HumanMessage(
+                        content=(
+                            "You must respond with tool calls only — no prose. "
+                            "Use the native tool-calling API, not plain text. "
+                            "When done, call the finish tool (not the word 'finish')."
+                        )
+                    ))
 
             for call in tool_calls:
                 tool_name = call["name"]
@@ -373,8 +502,6 @@ class Agent:
                     self.logger.error(f"Tool {tool_name} failed: {exc}")
                     errors.append(f"Tool {tool_name} failed: {exc}")
                     messages.append(ToolMessage(tool_call_id=call["id"], content=f"Error: {exc}"))
-
-            current_prompt = messages  # always feed accumulated context back
 
         # Collect any state updates that tools want to push back into AgentMessage
         state_updates: dict = {}

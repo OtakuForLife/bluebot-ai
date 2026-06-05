@@ -27,6 +27,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from src.project.files import FileManager
+from src.project.manager import parse_persisted_tasks
+
+_VALID_TASK_TYPES = ("design", "gameplay", "systems", "art")
+
+
 class TaskCard(QFrame):
     """Individual task card widget."""
 
@@ -194,18 +200,19 @@ class TaskColumn(QWidget):
 class TaskCreationDialog(QDialog):
     """Dialog for creating new tasks."""
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
-        """Initialize the task creation dialog.
-
-        Args:
-            orchestrator: The orchestrator managing the agents.
-            parent: Parent widget.
-        """
+    def __init__(
+        self,
+        agents: Optional[list[str]] = None,
+        task_types: Optional[list[str]] = None,
+        parent: Optional[QWidget] = None,
+    ) -> None:
         super().__init__(parent)
 
         self.setWindowTitle("Create New Task")
         self.resize(500, 400)
 
+        self._agent_names = agents or []
+        self._task_types = task_types or list(_VALID_TASK_TYPES)
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -230,10 +237,12 @@ class TaskCreationDialog(QDialog):
 
         # Agent selection
         self.agent_combo = QComboBox()
+        if self._agent_names:
+            self.agent_combo.addItems(self._agent_names)
         form_layout.addRow("Assign to:", self.agent_combo)
 
-        # Task type selection
         self.task_type_combo = QComboBox()
+        self.task_type_combo.addItems(self._task_types)
         form_layout.addRow("Task Type:", self.task_type_combo)
 
         # Requires review checkbox
@@ -282,9 +291,10 @@ class KanbanBoard(QWidget):
         super().__init__(parent)
 
         self.logger = logging.getLogger(f"{__name__}.KanbanBoard")
-        self.tasks: dict[str, dict] = {}  # task_id -> task_data
+        self.tasks: dict[str, dict] = {}
         self._project_path: Optional[Path] = None
-        # Payloads waiting for human review, keyed by task_id
+        self._file_manager: Optional[FileManager] = None
+        self._agent_names: list[str] = []
         self._pending_reviews: dict[str, dict] = {}
 
         self._setup_ui()
@@ -388,7 +398,10 @@ class KanbanBoard(QWidget):
     @Slot()
     def _on_create_task(self) -> None:
         """Handle create task button click."""
-        dialog = TaskCreationDialog(self)
+        dialog = TaskCreationDialog(
+            agents=self._agent_names or None,
+            parent=self,
+        )
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
             task_data = dialog.get_task_data()
@@ -417,49 +430,60 @@ class KanbanBoard(QWidget):
             self.logger.info(f"Created task: {task_data.get('title')} for {agent_name}")
             self.task_submitted.emit(agent_name, task_type, payload)
 
+    def set_agent_names(self, names: list[str]) -> None:
+        self._agent_names = names
+
+    def set_file_manager(self, file_manager: FileManager) -> None:
+        self._file_manager = file_manager
+
+    def _column_for_state(self, state: str) -> Optional[TaskColumn]:
+        if state == "todo":
+            return self.todo_column
+        if state == "in_progress":
+            return self.in_progress_column
+        if state == "review":
+            return self.review_column
+        if state == "done":
+            return self.done_column
+        return None
+
     def set_project_path(self, path: Path) -> None:
-        """Load tasks.json for the given project and populate the board.
-
-        Called whenever a project is opened. Clears any previously loaded
-        tasks and replaces them with the persisted state from disk.
-
-        Args:
-            path: Absolute path to the project root directory.
-        """
+        """Load tasks.json for the given project and populate the board."""
         self._project_path = path
         self.tasks.clear()
 
-        tasks_file = path / "tasks.json"
-        if tasks_file.exists():
-            try:
-                data = json.loads(tasks_file.read_text(encoding="utf-8"))
-                for task in data.get("tasks", []):
-                    task_id = task.get("id")
-                    if task_id:
-                        self.tasks[task_id] = task
-            except Exception as exc:
-                self.logger.error(f"Failed to load tasks.json: {exc}")
+        tasks = parse_persisted_tasks(path / FileManager.TASKS_FILE)
+        if tasks:
+            for task in tasks:
+                task_id = task.get("id")
+                if task_id:
+                    self.tasks[task_id] = task
+        elif (path / FileManager.TASKS_FILE).exists():
+            self.logger.warning(f"Could not parse {FileManager.TASKS_FILE} in {path}")
 
         self.refresh_board()
         self.logger.info(f"Loaded {len(self.tasks)} task(s) from {path}")
 
     def _save_tasks(self) -> None:
-        """Persist the current task list to tasks.json in the project folder.
-
-        Uses an atomic temp-file rename so a crash mid-write never corrupts
-        the file. Silently skips if no project path is set.
-        """
+        """Persist the current task list to tasks.json in the project folder."""
         if not self._project_path:
             return
 
-        tasks_file = self._project_path / "tasks.json"
+        data = {"tasks": list(self.tasks.values())}
+        if self._file_manager:
+            if not self._file_manager.write_json_file(
+                self._project_path, FileManager.TASKS_FILE, data
+            ):
+                self.logger.error(f"Failed to save {FileManager.TASKS_FILE}")
+            return
+
+        tasks_file = self._project_path / FileManager.TASKS_FILE
         try:
-            data = {"tasks": list(self.tasks.values())}
             tmp = tasks_file.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             tmp.replace(tasks_file)
         except Exception as exc:
-            self.logger.error(f"Failed to save tasks.json: {exc}")
+            self.logger.error(f"Failed to save {FileManager.TASKS_FILE}: {exc}")
 
     def add_task(self, task_data: dict) -> None:
         """Add a task to the board and persist the change.
@@ -477,16 +501,9 @@ class KanbanBoard(QWidget):
         self._save_tasks()
 
         # Add to appropriate column
-        state = task_data.get("state", "todo")
-
-        if state == "todo":
-            self.todo_column.add_task(task_data)
-        elif state == "in_progress":
-            self.in_progress_column.add_task(task_data)
-        elif state == "review":
-            self.review_column.add_task(task_data)
-        elif state == "done":
-            self.done_column.add_task(task_data)
+        column = self._column_for_state(task_data.get("state", "todo"))
+        if column:
+            column.add_task(task_data)
 
     def refresh_board(self) -> None:
         """Refresh the board display."""
@@ -498,16 +515,9 @@ class KanbanBoard(QWidget):
 
         # Re-add all tasks
         for task_data in self.tasks.values():
-            state = task_data.get("state", "todo")
-
-            if state == "todo":
-                self.todo_column.add_task(task_data)
-            elif state == "in_progress":
-                self.in_progress_column.add_task(task_data)
-            elif state == "review":
-                self.review_column.add_task(task_data)
-            elif state == "done":
-                self.done_column.add_task(task_data)
+            column = self._column_for_state(task_data.get("state", "todo"))
+            if column:
+                column.add_task(task_data)
 
     def update_task_state(self, task_id: str, new_state: str) -> None:
         """Update a task's state and persist the change.

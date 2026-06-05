@@ -10,6 +10,7 @@ from uuid import uuid4
 from PySide6.QtCore import Qt, QThread, Signal, Slot
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
+    QDialog,
     QMainWindow,
     QMessageBox,
     QStatusBar,
@@ -18,7 +19,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from src.agents.orchestrator import AgentOrchestrator
+from src.agents.state_factory import build_initial_workflow_state
+from src.project.files import FileManager
 from src.ui.agent_panel import AgentPanel
 from src.ui.file_explorer_panel import FileExplorerPanel
 from src.ui.human_review_dialog import HumanReviewDialog
@@ -42,13 +44,13 @@ class WorkflowThread(QThread):
 
     def __init__(
         self,
-        orchestrator,
+        command_bridge: QtCommandBridge,
         initial_state: dict,
         thread_id: str,
         parent=None,
     ) -> None:
         super().__init__(parent)
-        self.orchestrator = orchestrator
+        self.command_bridge = command_bridge
         self.initial_state = initial_state
         self.thread_id = thread_id
 
@@ -58,7 +60,7 @@ class WorkflowThread(QThread):
         asyncio.set_event_loop(loop)
         try:
             loop.run_until_complete(
-                self.orchestrator.start_event_driven(
+                self.command_bridge.start_event_driven_async(
                     self.initial_state, self.thread_id
                 )
             )
@@ -84,18 +86,10 @@ class MainWindow(QMainWindow):
         qt_event_bridge: QtEventBridge,
         qt_command_bridge: QtCommandBridge,
         qt_log_handler: QtLogHandler,
-        agent_orchestrator: Optional[AgentOrchestrator] = None,
+        file_manager: Optional[FileManager] = None,
         selected_project: Optional[dict] = None,
     ) -> None:
-        """Initialize the main window.
-
-        Args:
-            qt_event_bridge: Qt event bridge for backend events.
-            qt_command_bridge: Qt command bridge for backend commands.
-            qt_log_handler: Qt log handler for logging.
-            agent_orchestrator: Optional agent orchestrator instance.
-            selected_project: Selected project data dictionary.
-        """
+        """Initialize the main window."""
         super().__init__()
 
         self.logger = logging.getLogger(f"{__name__}.MainWindow")
@@ -103,7 +97,7 @@ class MainWindow(QMainWindow):
         self.qt_event_bridge = qt_event_bridge
         self.qt_command_bridge = qt_command_bridge
         self.qt_log_handler = qt_log_handler
-        self.agent_orchestrator = agent_orchestrator
+        self.file_manager = file_manager
         self.selected_project = selected_project
 
         self._setup_ui()
@@ -158,21 +152,21 @@ class MainWindow(QMainWindow):
         self.tab_widget.addTab(self.llm_config_panel, "LLM Settings")
 
         # Add agents to the panel if orchestrator has registered agents
-        if self.agent_orchestrator:
-            from src.agents.base import AgentRole
-            agents = self.agent_orchestrator.get_agents()
+        if self.qt_command_bridge.orchestrator:
+            agents = self.qt_command_bridge.get_agents()
             for agent in agents:
                 self.agent_panel.add_agent(agent.name, agent.role.value)
+            self.kanban_board.set_agent_names([a.name for a in agents])
+            if self.file_manager:
+                self.kanban_board.set_file_manager(self.file_manager)
             self.logger.info(f"Added {len(agents)} agents to the panel")
 
-        # Connect agent panel signals to orchestrator
         self.agent_panel.system_start_requested.connect(self._on_start_system)
         self.agent_panel.system_stop_requested.connect(self._on_stop_system)
 
-        # Propagate LLM provider changes to all agents
-        if self.agent_orchestrator:
+        if self.qt_command_bridge.orchestrator:
             self.llm_config_panel.provider_created.connect(
-                self.agent_orchestrator.update_provider
+                self.qt_command_bridge.update_provider
             )
 
         # Connect Qt event bridge signals to panel updates
@@ -191,6 +185,7 @@ class MainWindow(QMainWindow):
         self.qt_event_bridge.task_created.connect(self._on_task_created)
         self.qt_event_bridge.task_assigned.connect(self._on_task_assigned)
         self.qt_event_bridge.task_updated.connect(self._on_task_updated)
+        self.qt_event_bridge.task_completed.connect(self._on_task_completed)
 
         # Route all Python log records to the History panel
         self.qt_log_handler.log_message.connect(self.output_panel.add_log)
@@ -294,32 +289,24 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _read_project_json(self) -> dict:
-        """Read project.json from the selected project's directory.
-
-        Returns an empty dict if the file is missing or unreadable.
-        """
-        project_path = Path(self.selected_project.get("path", "")) if self.selected_project else None
-        if not project_path:
+        """Read project.json from the selected project's directory."""
+        if not self.selected_project or not self.file_manager:
             return {}
-        meta_file = project_path / "project.json"
-        if not meta_file.exists():
-            return {}
-        try:
-            return json.loads(meta_file.read_text(encoding="utf-8"))
-        except Exception as exc:
-            self.logger.warning(f"Could not read project.json: {exc}")
-            return {}
+        project_path = Path(self.selected_project.get("path", ""))
+        data = self.file_manager.read_json_file(
+            project_path, FileManager.PROJECT_METADATA_FILE
+        )
+        return data if isinstance(data, dict) else {}
 
     def _write_project_json(self, data: dict) -> None:
         """Write *data* back to project.json in the selected project's directory."""
-        project_path = Path(self.selected_project.get("path", "")) if self.selected_project else None
-        if not project_path:
+        if not self.selected_project or not self.file_manager:
             return
-        meta_file = project_path / "project.json"
-        try:
-            meta_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception as exc:
-            self.logger.error(f"Failed to write project.json: {exc}")
+        project_path = Path(self.selected_project.get("path", ""))
+        if not self.file_manager.write_json_file(
+            project_path, FileManager.PROJECT_METADATA_FILE, data
+        ):
+            self.logger.error(f"Failed to write project.json in {project_path}")
 
     # ------------------------------------------------------------------
     # Workflow start / stop
@@ -328,7 +315,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_start_system(self) -> None:
         """Start the agent system and launch the workflow in a background thread."""
-        if not self.agent_orchestrator:
+        if not self.qt_command_bridge.orchestrator:
             return
 
         if not self.selected_project:
@@ -344,50 +331,16 @@ class MainWindow(QMainWindow):
         self.selected_project["thread_id"] = meta["thread_id"]
 
         # start_system() is called inside start_event_driven() — no separate call needed
-        initial_state = self._build_initial_workflow_state()
+        initial_state = build_initial_workflow_state(self.selected_project or {})
         thread_id = self.selected_project["thread_id"]
 
         self._workflow_thread = WorkflowThread(
-            self.agent_orchestrator, initial_state, thread_id, parent=self
+            self.qt_command_bridge, initial_state, thread_id, parent=self
         )
         self._workflow_thread.workflow_done.connect(self._on_workflow_finished)
         self._workflow_thread.error.connect(self._on_workflow_error)
         self._workflow_thread.start()
         self.logger.info(f"Workflow thread started (thread_id={thread_id})")
-
-    def _build_initial_workflow_state(self) -> dict:
-        """Build the initial AgentMessage state from the selected project.
-
-        Uses the persisted game brief as the top-level task description so the
-        Producer has real creative direction from the very first iteration.
-        """
-        project = self.selected_project or {}
-        brief = project.get("brief") or (
-            f"Project: {project.get('name', 'Unknown')}\n"
-            f"{project.get('description', '')}"
-        )
-        return {
-            "task_id": str(uuid4()),
-            "task_type": "",
-            "task_description": brief,
-            "acceptance_criteria": [],
-            "workspace_root": project.get("path", "."),
-            "allowed_paths": [project.get("path", ".")],
-            "last_agent": None,
-            "messages": [],
-            "tool_results": [],
-            "modified_files": [],
-            "created_files": [],
-            "deleted_files": [],
-            "outcome": None,
-            "errors": [],
-            "no_more_tasks": False,
-            "human_review_approved": None,
-            "human_review_comment": None,
-            "current_task_id": None,
-            "current_task_agent": None,
-            "task_allocation_mode": "auto_pull",
-        }
 
     @Slot()
     def _on_workflow_finished(self) -> None:
@@ -428,7 +381,7 @@ class MainWindow(QMainWindow):
             # current_task_id missing from interrupt payload — open dialog immediately
             self.logger.warning(
                 "current_task_id not in interrupt payload; opening review dialog immediately. "
-                "Check that assign_task was called and current_task_id is in LangGraph state."
+                "Check that create_task was called and current_task_id is in LangGraph state."
             )
             self._show_review_dialog(payload, thread_id)
             return
@@ -455,24 +408,45 @@ class MainWindow(QMainWindow):
         thread_id = payload.get("_thread_id")  # None when no live workflow
 
         dialog = HumanReviewDialog(payload, parent=self)
-        dialog.exec()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.logger.info(
+                f"Human review dismissed for task {task_id} — no state change"
+            )
+            return
+
         approved, comment = dialog.get_result()
 
-        if thread_id and self.agent_orchestrator:
+        if thread_id and self.qt_command_bridge.orchestrator:
             # Live workflow paused at human_review_node — resume it
-            self.agent_orchestrator.submit_human_review(thread_id, approved, comment)
+            self.qt_command_bridge.submit_human_review(thread_id, approved, comment)
             self.logger.info(
                 f"Human review submitted to workflow: approved={approved}, "
                 f"thread_id={thread_id}"
             )
         else:
-            # No active workflow — update the task card state directly
-            new_state = "done" if approved else "todo"
-            self.kanban_board.update_task_state(task_id, new_state)
-            self.logger.info(
-                f"Human review (offline): approved={approved} → task {task_id} "
-                f"moved to '{new_state}'"
+            # No live workflow — sync backend when the system is running,
+            # otherwise update the kanban board directly (tasks.json only).
+            orch_bridge = self.qt_command_bridge.orchestrator
+            system_running = (
+                orch_bridge is not None
+                and orch_bridge.orchestrator().system_running
             )
+            if system_running:
+                if approved:
+                    orch_bridge.complete_task_offline(task_id, comment)
+                else:
+                    orch_bridge.request_task_rework(task_id, comment)
+                self.logger.info(
+                    f"Human review (offline, system running): approved={approved} "
+                    f"→ task {task_id} synced to backend"
+                )
+            else:
+                new_state = "done" if approved else "todo"
+                self.kanban_board.update_task_state(task_id, new_state)
+                self.logger.info(
+                    f"Human review (offline): approved={approved} → task {task_id} "
+                    f"moved to '{new_state}'"
+                )
 
         self.kanban_board.clear_pending_review(task_id)
 
@@ -486,14 +460,19 @@ class MainWindow(QMainWindow):
             payload: Review payload to display in the dialog.
             thread_id: Workflow thread_id to resume after the decision.
         """
-        if not self.agent_orchestrator:
+        if not self.qt_command_bridge.orchestrator:
             return
 
         dialog = HumanReviewDialog(payload, parent=self)
-        dialog.exec()
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.logger.info(
+                f"Human review dismissed (fallback) for thread {thread_id} — no change"
+            )
+            return
+
         approved, comment = dialog.get_result()
 
-        self.agent_orchestrator.submit_human_review(thread_id, approved, comment)
+        self.qt_command_bridge.submit_human_review(thread_id, approved, comment)
         self.logger.info(
             f"Human review submitted (fallback): approved={approved}, "
             f"thread_id={thread_id}"
@@ -508,8 +487,8 @@ class MainWindow(QMainWindow):
         the stop event fires — do NOT call it here to avoid a double-stop.
         Falls back to a hard quit after 5 s if the thread doesn't exit cleanly.
         """
-        if self.agent_orchestrator:
-            self.agent_orchestrator.signal_stop()
+        if self.qt_command_bridge.orchestrator:
+            self.qt_command_bridge.signal_stop()
 
         if hasattr(self, "_workflow_thread") and self._workflow_thread.isRunning():
             self._workflow_thread.quit()
@@ -559,6 +538,15 @@ class MainWindow(QMainWindow):
         new_state = payload.get("new_state")
         if task_id and new_state:
             self.kanban_board.update_task_state(task_id, new_state)
+
+    @Slot(object)
+    def _on_task_completed(self, event: dict) -> None:
+        """Move a task to Done when the full workflow completes successfully."""
+        payload = event.get("payload", {})
+        task_id = payload.get("task_id")
+        if task_id:
+            self.kanban_board.update_task_state(task_id, "done")
+            self.kanban_board.clear_pending_review(task_id)
 
     @Slot()
     def _on_start_all_agents(self) -> None:

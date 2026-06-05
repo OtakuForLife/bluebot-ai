@@ -134,3 +134,77 @@ def test_validate_project_structure(file_manager, temp_project_dir) -> None:
 
     # Check that other directories don't exist
     assert results[FileManager.ASSETS_DIR] is False
+
+
+def test_create_file_emits_project_file_created(
+    file_manager: FileManager, temp_project_dir: Path
+) -> None:
+    """Creating a file through FileManager emits PROJECT_FILE_CREATED."""
+    from src.events import EventType
+
+    events: list = []
+
+    def capture(event: dict) -> None:
+        events.append(event)
+
+    file_manager.event_handler.subscribe(
+        EventType.PROJECT_FILE_CREATED, capture
+    )
+
+    result = file_manager.create_file(
+        "design/NOTE.md", "# note", project_root=str(temp_project_dir)
+    )
+
+    assert result.startswith("Successfully")
+    assert len(events) == 1
+    assert events[0]["payload"]["path"] == "design/NOTE.md"
+    assert events[0]["payload"]["project_path"] == str(temp_project_dir)
+
+
+def test_create_file_overwrites_and_emits_updated(
+    file_manager: FileManager, temp_project_dir: Path
+) -> None:
+    """create_file overwrites an existing file and emits PROJECT_FILE_UPDATED."""
+    from src.events import EventType
+
+    updated: list = []
+    file_manager.event_handler.subscribe(
+        EventType.PROJECT_FILE_UPDATED, lambda e: updated.append(e)
+    )
+
+    file_manager.create_file(
+        "design/NOTE.md", "v1", project_root=str(temp_project_dir)
+    )
+    result = file_manager.create_file(
+        "design/NOTE.md", "v2", project_root=str(temp_project_dir)
+    )
+
+    assert "updated" in result
+    assert len(updated) == 1
+    assert (temp_project_dir / "design" / "NOTE.md").read_text(encoding="utf-8") == "v2"
+
+
+def test_write_project_file_emits_created_or_updated(
+    file_manager: FileManager, temp_project_dir: Path
+) -> None:
+    """write_project_file emits CREATED on first write and UPDATED on overwrite."""
+    from src.events import EventType
+
+    created: list = []
+    updated: list = []
+
+    file_manager.event_handler.subscribe(
+        EventType.PROJECT_FILE_CREATED, lambda e: created.append(e)
+    )
+    file_manager.event_handler.subscribe(
+        EventType.PROJECT_FILE_UPDATED, lambda e: updated.append(e)
+    )
+
+    rel = "design/VISION.md"
+    assert file_manager.write_project_file(temp_project_dir, rel, "v1")
+    assert file_manager.write_project_file(temp_project_dir, rel, "v2")
+
+    assert len(created) == 1
+    assert len(updated) == 1
+    assert created[0]["payload"]["path"] == rel
+    assert updated[0]["payload"]["path"] == rel

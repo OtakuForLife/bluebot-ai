@@ -1,11 +1,5 @@
-
-
-from datetime import datetime
 from enum import Enum
 from typing import Optional, TypedDict
-
-from src.agents.roles import AgentRole
-
 
 
 class TaskStatus(str, Enum):
@@ -29,13 +23,19 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class AgentTask(TypedDict):
+class AgentTask(TypedDict, total=False):
+    """In-memory and persisted task shape used by ProjectManager and the UI."""
     id: str
-    type: AgentRole
     title: str
     description: str
-    status: TaskStatus
+    task_type: str
+    state: str
+    agent: str
     requires_review: bool
-    created_at: datetime
+    acceptance_criteria: list[str]
+    capability: str
+    recommended_artifact: str
+    rubric: str
+    created_at: str
     created_by: Optional[str]
-    completed_at: Optional[datetime]
+    completed_at: Optional[str]

@@ -34,6 +34,26 @@ class TestProjectManager:
         assert project_manager.event_handler is not None
         assert len(project_manager.get_tasks()) == 0
 
+    def test_reconcile_orphaned_tasks_resets_in_progress(self, project_manager) -> None:
+        """Stale in-progress tasks return to todo on system start."""
+        project_manager._tasks["t1"] = {
+            "id": "t1",
+            "title": "Vision",
+            "state": TaskStatus.IN_PROGRESS.value,
+            "agent": "game_designer",
+        }
+        updated: list = []
+        project_manager.event_handler.subscribe(
+            EventType.TASK_UPDATED, lambda e: updated.append(e)
+        )
+
+        reset = project_manager.reconcile_orphaned_tasks()
+
+        assert reset == ["t1"]
+        assert project_manager.get_tasks()[0]["state"] == TaskStatus.OPEN.value
+        assert project_manager.get_tasks()[0]["agent"] == ""
+        assert updated[0]["payload"]["new_state"] == TaskStatus.OPEN.value
+
     def test_add_task(self, project_manager) -> None:
         """Test adding a task."""
         task = {

@@ -93,7 +93,7 @@ class ProjectManager:
 
         _on_task_created (subscribed above) handles the actual dict write,
         so there is exactly one code path for task storage regardless of
-        whether the task came from a command or from the assign_task tool.
+        whether the task came from a command or from the create_task tool.
         """
         self.event_handler.emit_event(Event(
             type=EventType.TASK_CREATED,
@@ -130,6 +130,31 @@ class ProjectManager:
                 if "state" not in task_data:
                     task_data["state"] = TaskStatus.OPEN.value
                 self._tasks[task_id] = task_data
+
+    def reconcile_orphaned_tasks(self) -> list[str]:
+        """Reset stale in-progress tasks after a crash or workflow stop.
+
+        When the app stops mid-workflow, tasks.json may still show
+        ``in_progress`` even though no agent is running.  Those tasks are
+        returned to the open marketplace (todo) so they can be picked up again.
+        """
+        reset_ids: list[str] = []
+        for task_id, task in self._tasks.items():
+            if task.get("state") != TaskStatus.IN_PROGRESS.value:
+                continue
+            task["state"] = TaskStatus.OPEN.value
+            task["agent"] = ""
+            reset_ids.append(task_id)
+            self.event_handler.emit_event(Event(
+                type=EventType.TASK_UPDATED,
+                payload={
+                    "task_id": task_id,
+                    "new_state": TaskStatus.OPEN.value,
+                    "reason": "orphaned_in_progress_reset",
+                },
+                timestamp=datetime.now().isoformat(),
+            ))
+        return reset_ids
 
     # ── Public API — task marketplace ─────────────────────────────────────────
 

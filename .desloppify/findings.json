@@ -1,0 +1,303 @@
+{
+  "assessments": {
+    "cross_module_architecture": 71.5,
+    "high_level_elegance": 70.0,
+    "convention_outlier": 74.3,
+    "error_consistency": 69.7,
+    "mid_level_elegance": 76.1,
+    "abstraction_fitness": 78.0,
+    "dependency_health": 70.0,
+    "test_strategy": 74.0,
+    "low_level_elegance": 81.0,
+    "design_coherence": 75.0,
+    "ai_generated_debt": 73.0,
+    "package_organization": 83.0
+  },
+  "findings": [
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "services_private_orchestrator_coupling",
+      "summary": "Services reach into private AgentOrchestrator fields instead of a public dispatch API",
+      "related_files": ["src/agents/services.py", "src/agents/orchestrator.py"],
+      "evidence": [
+        "TaskDispatchService reads _task_graphs, _base_state and calls run_workflow with private compiled graphs",
+        "ProducerService reads _base_state and calls _run_producer()"
+      ],
+      "suggestion": "Expose a narrow public facade on AgentOrchestrator (get_task_graph, base_state, run_producer) or inject compiled graphs and base state into services at construction.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "ui_bypasses_bridge_for_orchestrator",
+      "summary": "MainWindow calls AgentOrchestrator directly, bypassing QtCommandBridge",
+      "related_files": ["src/ui/main_window.py", "src/ui/bridge.py", "AGENTS.md"],
+      "evidence": [
+        "MainWindow invokes start_event_driven, submit_human_review, signal_stop, and update_provider on the orchestrator directly",
+        "QtCommandBridge exposes commands/events but no orchestrator lifecycle surface"
+      ],
+      "suggestion": "Route workflow start/stop, human review, and provider updates through QtCommandBridge commands so UI never holds direct orchestrator references.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "project_domain_coupled_to_agents",
+      "summary": "Project task model imports AgentRole while runtime dicts use different field names",
+      "related_files": ["src/project/tasks.py", "src/project/manager.py", "src/agents/llm/tools.py"],
+      "evidence": [
+        "AgentTask TypedDict declares type: AgentRole and status: TaskStatus",
+        "ProjectManager and assign_task tool use task_type and state string keys instead"
+      ],
+      "suggestion": "Define a project-layer PersistedTask TypedDict with task_type/state in project/tasks.py without agent imports; map to AgentRole only in the agents package.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "cross_module_architecture",
+      "identifier": "file_io_not_centralized",
+      "summary": "Agent file tools bypass FileManager for read/list while AGENTS.md mandates FileManager for all file access",
+      "related_files": ["src/project/files.py", "src/agents/llm/tools.py"],
+      "evidence": [
+        "create_file delegates to FileManager but read_file and list_files use Path directly",
+        "FileManager stores EventHandler but never emits PROJECT_FILE_* events"
+      ],
+      "suggestion": "Add FileManager.read_project_file and list_project_files that emit PROJECT_FILE_* events; route all agent tools through them.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "dual_task_dispatch_paradigms",
+      "summary": "Polling graph task_dispatcher and event-driven TaskDispatchService overlap in production wiring",
+      "related_files": ["src/app.py", "src/agents/graph.py", "src/agents/services.py", "src/ui/main_window.py"],
+      "evidence": [
+        "app.py builds full WorkflowSpec with task_dispatcher while subscribing TaskDispatchService to TASK_CREATED",
+        "MainWindow uses start_event_driven, not run_polling_workflow"
+      ],
+      "suggestion": "Choose one dispatch model for production: drop task_dispatcher from the default spec when event-driven services are active, or remove TaskDispatchService and drive dispatch solely through the graph.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "duplicated_agent_message_bootstrap",
+      "summary": "AgentMessage reset dicts are copy-pasted across UI, orchestrator, and services",
+      "related_files": ["src/agents/state.py", "src/ui/main_window.py", "src/agents/orchestrator.py", "src/agents/services.py"],
+      "evidence": [
+        "Near-identical partial AgentMessage literals appear in main_window, start_event_driven seed, TaskDispatchService, ProducerService, and polling reset"
+      ],
+      "suggestion": "Add create_initial_state, reset_for_producer, and reset_for_task helpers in state.py and replace inline dict literals.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "high_level_elegance",
+      "identifier": "orchestrator_monolith",
+      "summary": "AgentOrchestrator combines graph compilation, human review, polling, and lifecycle in one class",
+      "related_files": ["src/agents/orchestrator.py", "src/agents/graph.py"],
+      "evidence": [
+        "human_review_node, run_workflow interrupt loop, start_event_driven, and run_polling_workflow all live in orchestrator.py (~500 LOC)"
+      ],
+      "suggestion": "Extract HumanReviewCoordinator, WorkflowRunner, and GraphRegistry from AgentOrchestrator; keep orchestrator as a thin lifecycle coordinator.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "hardcoded_tasks_json_path",
+      "summary": "KanbanBoard hardcodes tasks.json instead of FileManager.TASKS_FILE",
+      "related_files": ["src/ui/kanban_board.py", "src/project/files.py"],
+      "evidence": [
+        "kanban_board.py uses literal tasks.json while FileManager defines TASKS_FILE constant"
+      ],
+      "suggestion": "Import and use FileManager.TASKS_FILE for all task persistence paths.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "convention_outlier",
+      "identifier": "private_tool_factories_in_app",
+      "summary": "app.py imports private _create_* tool factories from llm.tools",
+      "related_files": ["src/app.py", "src/agents/llm/tools.py"],
+      "evidence": [
+        "app.py imports _create_assign_task_tool, _create_file_tool, and other underscore-prefixed factories"
+      ],
+      "suggestion": "Expose a public build_agent_tools(...) factory and import that from app.py instead of private helpers.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "inconsistent_tool_error_shapes",
+      "summary": "Agent tool callbacks return three different error result shapes",
+      "related_files": ["src/agents/llm/tools.py"],
+      "evidence": [
+        "File tools return plain strings on validation failure",
+        "assign_task returns {no_more_tasks, error} while set_direction returns {direction, message}"
+      ],
+      "suggestion": "Standardize tool failures to a single contract such as {ok: false, error: ...} across all callbacks.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "create_project_ignores_failure",
+      "summary": "CreateProjectCommand handler ignores FileManager.create_project_structure bool return",
+      "related_files": ["src/commands/execution.py", "src/project/files.py"],
+      "evidence": [
+        "handle_create_project calls create_project_structure without checking its return value"
+      ],
+      "suggestion": "Check the return value and propagate failure to CommandBus/UI when project creation fails.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "error_consistency",
+      "identifier": "get_workflow_state_silent_failure",
+      "summary": "get_workflow_state swallows all exceptions and returns None without logging",
+      "related_files": ["src/agents/orchestrator.py"],
+      "evidence": [
+        "get_workflow_state uses except Exception: return None with no log line"
+      ],
+      "suggestion": "Log at warning level before returning None, or re-raise unexpected errors after logging.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "task_creation_dialog_empty_combos",
+      "summary": "TaskCreationDialog agent and task_type combos are never populated",
+      "related_files": ["src/ui/kanban_board.py"],
+      "evidence": [
+        "TaskCreationDialog creates agent_combo and task_type_combo but never calls addItems",
+        "get_task_data reads currentText from empty combos yielding blank values"
+      ],
+      "suggestion": "Populate combos from orchestrator agent names and valid task types when opening the dialog.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "mid_level_elegance",
+      "identifier": "kanban_state_routing_duplicated",
+      "summary": "Kanban state-to-column routing logic is duplicated in add_task and refresh_board",
+      "related_files": ["src/ui/kanban_board.py"],
+      "evidence": [
+        "Identical state-to-column if/elif blocks appear in add_task and refresh_board"
+      ],
+      "suggestion": "Extract _column_for_state(state) helper and reuse in both code paths.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "abstraction_fitness",
+      "identifier": "langchain_adapter_partial_shim",
+      "summary": "LangChainAdapter is a partial shim rather than a LangChain BaseChatModel",
+      "related_files": ["src/agents/llm/langchain_adapter.py", "src/agents/base.py"],
+      "evidence": [
+        "Adapter exposes invoke/ainvoke but does not subclass langchain_core chat model types",
+        "Tool binding duplicates StructuredTool plus parallel _agent_tool_schemas map"
+      ],
+      "suggestion": "Either subclass BaseChatModel properly or rename/document LangChainAdapter as an internal Agent runtime adapter to avoid false LangChain compatibility expectations.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "pytest_in_runtime_deps",
+      "summary": "pytest and pytest-asyncio are listed as runtime project dependencies",
+      "related_files": ["pyproject.toml"],
+      "evidence": [
+        "pytest>=9.0.2 and pytest-asyncio>=0.25.2 appear under [project] dependencies, not dev/optional groups"
+      ],
+      "suggestion": "Move test dependencies to [dependency-groups] dev or [project.optional-dependencies] test.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "dependency_health",
+      "identifier": "unused_langchain_package",
+      "summary": "Top-level langchain package is declared but only langchain_core is imported in src",
+      "related_files": ["pyproject.toml", "src"],
+      "evidence": [
+        "pyproject.toml lists langchain>=1.2.10 while src imports use langchain_core only"
+      ],
+      "suggestion": "Remove unused langchain dependency or document and use it; keep langchain_core as the direct dependency.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "main_window_untested",
+      "summary": "Primary UI workflow in MainWindow has no dedicated test module",
+      "related_files": ["src/ui/main_window.py", "tests"],
+      "evidence": [
+        "41 src files vs 17 test files; no test_main_window.py despite 600 LOC workflow thread and human review wiring"
+      ],
+      "suggestion": "Add integration tests for WorkflowThread startup, stop signal, and human review submission using QApplication fixture and mocked orchestrator.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "test_strategy",
+      "identifier": "event_driven_pipeline_unverified",
+      "summary": "Reactive TASK_CREATED dispatch path lacks end-to-end test coverage",
+      "related_files": ["src/app.py", "src/agents/services.py", "tests/test_agent_graph.py"],
+      "evidence": [
+        "test_agent_graph.py covers GraphBuilder and unit orchestrator behavior but not app wiring of TaskDispatchService + ProducerService subscribers"
+      ],
+      "suggestion": "Add an async integration test that emits TASK_CREATED and asserts claim_task plus run_workflow invocation through services.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "sync_async_loop_duplication",
+      "summary": "LangChainAdapter invoke and generate duplicate identical event-loop bootstrap",
+      "related_files": ["src/agents/llm/langchain_adapter.py"],
+      "evidence": [
+        "invoke() and generate() each repeat get_event_loop/new_event_loop/run_until_complete blocks"
+      ],
+      "suggestion": "Extract _run_sync(coro) helper used by both sync entry points.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "low_level_elegance",
+      "identifier": "mutable_default_nodes_arg",
+      "summary": "AgentOrchestrator.__init__ uses mutable dict default for nodes parameter",
+      "related_files": ["src/agents/orchestrator.py"],
+      "evidence": [
+        "__init__(..., nodes: dict[str, Any] = {}, ...) uses mutable default argument"
+      ],
+      "suggestion": "Change default to None and assign nodes = nodes or {} inside __init__.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "ui_bypasses_file_manager",
+      "summary": "UI reads and writes project.json and tasks.json directly, violating AGENTS.md FileManager rule",
+      "related_files": ["src/ui/main_window.py", "src/ui/kanban_board.py", "AGENTS.md"],
+      "evidence": [
+        "main_window uses _read_project_json/_write_project_json with Path directly",
+        "kanban_board loads and saves tasks.json without FileManager"
+      ],
+      "suggestion": "Route UI persistence through FileManager methods so agents and UI share one file contract and event stream.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "design_coherence",
+      "identifier": "unused_full_compiled_graph",
+      "summary": "Orchestrator builds full polling graph at startup but UI uses event-driven path only",
+      "related_files": ["src/app.py", "src/agents/orchestrator.py", "src/ui/main_window.py"],
+      "evidence": [
+        "AgentOrchestrator.__init__ compiles self.compiled_graph from full WorkflowSpec",
+        "MainWindow calls start_event_driven; run_polling_workflow and stream_workflow are unused from app/UI"
+      ],
+      "suggestion": "Defer or skip full-graph compilation when operating in event-driven mode; compile only producer and per-task graphs needed at runtime.",
+      "confidence": "high"
+    },
+    {
+      "dimension": "ai_generated_debt",
+      "identifier": "section_banner_comment_noise",
+      "summary": "Repeated unicode section banners and tutorial docstrings inflate comment-to-code ratio",
+      "related_files": ["src/agents/graph.py", "src/agents/orchestrator.py", "src/app.py"],
+      "evidence": [
+        "Multiple modules use # ── Section ── banners and multi-paragraph docstrings on obvious factories"
+      ],
+      "suggestion": "Remove decorative section banners and shorten docstrings to non-obvious behavior only.",
+      "confidence": "medium"
+    },
+    {
+      "dimension": "package_organization",
+      "identifier": "app_composition_root_god_module",
+      "summary": "app.py owns logging, tracing, agent wiring, workflow specs, and GUI bootstrap in one file",
+      "related_files": ["src/app.py"],
+      "evidence": [
+        "app.py (~390 LOC) combines setup_tracing, _create_agents, _setup_components, event subscriptions, and main()"
+      ],
+      "suggestion": "Split into bootstrap.py (tracing/logging), composition.py (agent/workflow wiring), and keep app.py as a thin entrypoint.",
+      "confidence": "medium"
+    }
+  ]
+}
