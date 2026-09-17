@@ -1,0 +1,65 @@
+# Bluebot AI — project intelligence
+
+Living journal of patterns that are easy to miss in the code. Read with `memory-bank/` and `AGENTS.md`.
+
+## Hard rules (do not violate)
+
+- Qt widgets do not call backend services. Use `QtEventBridge` / `QtCommandBridge` / `OrchestratorBridge`.
+- Project file I/O goes through `FileManager`. Use its directory constants; no raw `"design"` / `"game"` strings for those dirs.
+- Agents load docs via `KnowledgeBase`, never by opening `knowledge/` themselves.
+- Agent side effects are `AgentTool`s (`src/agents/llm/tool.py`), not arbitrary Python.
+- Do not add dependencies if stdlib / existing packages cover it (ponytail rule).
+
+## Runtime vs docs
+
+- Shipped path is **event-driven**, not the polling LangGraph in `create_workflow_spec`. `app.py` sets `event_driven=True`. Producer node is `discovery_agent`.
+- Specialist graphs: `agent → project_director → human_review` (creative review gate). Built in `GraphRegistry._build_task_graphs`.
+- `TaskDispatchService` claims on `TASK_CREATED`. `ProducerService` re-runs discovery on `TASK_COMPLETED` and after start.
+- Task types that dispatch: `design`, `gameplay`, `systems`, `art` (`_VALID_TASK_TYPES` in `tools.py`).
+- Task status string values match kanban ids: `todo`, `in_progress`, `review`, `done`, `cancelled`.
+
+## LLM gotchas
+
+- App wires `OllamaProvider` with model `qwen3-vl:8b`. `LLMConfig` default is still `llama3`.
+- Local models often print `finish` as plain text. `src/agents/base.py` has JSON + loose-name parsers; keep those if you touch the ReAct loop.
+- Every agent gets a `finish` tool (`_FINISH_TOOL_NAME`). Discovery can also `create_task(..., no_more_tasks=true)` to stop the producer pass.
+- Phoenix tracing is optional; import failure must stay a warning.
+
+## File / task gotchas
+
+- Pre-load `tasks.json` before agents run (`_load_persisted_tasks`) or the duplicate guard is blind.
+- `_PROTECTED_FILES`: `tasks.json`, `project.json`.
+- Duplicate detection: active (non-completed/cancelled) task with same `recommended_artifact` or `capability`.
+- Orphaned in-progress tasks reset on system start (`ProjectManager.reconcile_orphaned_tasks`).
+
+## UI thread
+
+- Agent workflows run on `WorkflowThread` (QThread + new asyncio loop).
+- `EventHandler.set_event_loop` must run on that loop or async subscribers never fire.
+- Human review: LangGraph `interrupt` → `HUMAN_INPUT_REQUESTED` → dialog → `submit_human_review` → `Command(resume=...)`.
+- Stopping: `signal_stop` sets a loop Event, cancels pending event futures and running tasks.
+
+## Names that lie
+
+- `FileManager.SCRIPTS_DIR` is `"game"` (Godot project root), not a `scripts/` folder.
+- `KnowledgeBase.KNOWLEGDE_PATH` is misspelled; that is the attribute.
+- `game_developer` node uses `AgentRole.GAME_PROGRAMMER`.
+- `GAME_PRODUCER` / `QA_TESTER` / `AUDIO_ENGINEER` exist as enums and knowledge dirs but are not constructed in `_create_agents`.
+
+## Where to look
+
+| Need | Place |
+|------|--------|
+| Wire-up | `src/app.py` |
+| Events | `src/events.py` |
+| Commands | `src/commands/` |
+| Orchestrator | `src/agents/orchestrator.py`, `services.py`, `graph_registry.py` |
+| Tools | `src/agents/llm/tools.py` |
+| Project tree | `src/project/files.py` |
+| UI shell | `src/ui/main_window.py`, `src/ui/bridge.py` |
+| ADRs | `docs/DECISIONS.md` |
+| Intended studio loop | `docs/AGENT_WORKFLOW.md` (aspirational; not fully built) |
+
+## Test habit
+
+Non-trivial logic should leave one small pytest. Existing suite is the template; run `uv run pytest` after agent/tool/orchestrator changes.
